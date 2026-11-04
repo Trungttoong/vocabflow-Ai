@@ -1505,17 +1505,39 @@ Bản dịch của học viên: "${userTranslation}"`;
     sh.getRange(1, 1, 1, data.header.length).setFontWeight('bold');
     sh.setFrozenRows(1);
   }
-  const start = sh.getLastRow() + 1;
-  const rows = data.rows.map(r => {
+  const tz = Session.getScriptTimeZone();
+  const last = sh.getLastRow();
+  const existing = {};
+  if (last > 1) {
+    sh.getRange(2, 1, last - 1, 2).getValues().forEach((r, i) => {
+      const d = r[0] instanceof Date ? Utilities.formatDate(r[0], tz, 'yyyy-MM-dd') : String(r[0]);
+      existing[d + '|' + String(r[1]).trim().toLowerCase()] = i + 2;
+    });
+  }
+  let updated = 0;
+  const newRows = [];
+  data.rows.forEach(r => {
+    const key = String(r[0]) + '|' + String(r[1]).trim().toLowerCase();
     const p = String(r[0]).split('-');
-    return [new Date(+p[0], +p[1] - 1, +p[2])].concat(r.slice(1));
+    const row = [new Date(+p[0], +p[1] - 1, +p[2])].concat(r.slice(1));
+    if (key in existing) {
+      if (existing[key] > 0) {
+        sh.getRange(existing[key], 1, 1, row.length).setValues([row]);
+        sh.getRange(existing[key], 1).setNumberFormat('dd/MM/yyyy');
+        updated++;
+      }
+    } else {
+      existing[key] = -1;
+      newRows.push(row);
+    }
   });
-  if (rows.length) {
-    sh.getRange(start, 1, rows.length, rows[0].length).setValues(rows);
-    sh.getRange(start, 1, rows.length, 1).setNumberFormat('dd/MM/yyyy');
+  if (newRows.length) {
+    const start = sh.getLastRow() + 1;
+    sh.getRange(start, 1, newRows.length, newRows[0].length).setValues(newRows);
+    sh.getRange(start, 1, newRows.length, 1).setNumberFormat('dd/MM/yyyy');
   }
   return ContentService
-    .createTextOutput(JSON.stringify({ ok: true, added: rows.length }))
+    .createTextOutput(JSON.stringify({ ok: true, added: newRows.length, updated: updated }))
     .setMimeType(ContentService.MimeType.JSON);
 }`;
 
@@ -1611,7 +1633,7 @@ Bản dịch của học viên: "${userTranslation}"`;
                 const out = await res.json();
                 if (!out.ok) throw new Error("Script trả về lỗi");
                 markExported(items);
-                showToast("Đã thêm " + out.added + " từ vào Google Sheets!");
+                showToast("Đã thêm " + out.added + " từ mới" + (out.updated ? ", cập nhật " + out.updated + " từ đã có" : "") + " vào Google Sheets!");
                 closeExportModal();
             } catch (err) {
                 console.warn("Gửi bình thường lỗi, thử chế độ no-cors:", err);
