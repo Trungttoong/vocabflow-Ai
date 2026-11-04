@@ -96,6 +96,7 @@
                             Dark Mode
                         </span>
                         <button type="button" onclick="askApiKey()" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25">🔑 API Key</button>
+                        <button type="button" onclick="openExportModal()" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25">📤 Xuất Google Sheets</button>
                     </div>
                     <p class="text-xs text-slate-400">Nhập từ vựng &rarr; Tạo câu ngữ cảnh &rarr; Tập dịch &amp; Nhớ từ sâu</p>
                 </div>
@@ -271,14 +272,57 @@
                             <span id="sourceLangLabel" class="text-[11px] font-bold uppercase tracking-wider text-indigo-300">
                                 Câu Tiếng Anh cần dịch:
                             </span>
-                            <button 
-                                type="button" 
-                                onclick="speakCurrentEnglishSentence()" 
-                                class="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-500/30 text-xs font-semibold flex items-center gap-1.5 transition"
-                                title="Nghe phát âm câu tiếng Anh"
-                            >
-                                <span>🔊</span> Nghe câu
-                            </button>
+                            <div class="relative">
+                                <button 
+                                    id="btnListen"
+                                    type="button" 
+                                    onclick="handleListenClick()" 
+                                    class="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-500/30 text-xs font-semibold flex items-center gap-1.5 transition select-none"
+                                    title="Nhấn 1 lần: nghe câu • Nhấn đúp: chọn giọng & tốc độ"
+                                >
+                                    <span>🔊</span> Nghe câu
+                                </button>
+
+                                <!-- Bảng chọn giọng đọc & tốc độ (nhấn đúp để mở) -->
+                                <div id="voicePanel" class="hidden absolute right-0 top-full mt-2 z-50 w-[min(22rem,calc(100vw-3rem))] rounded-xl bg-[#0f172a] border border-indigo-500/40 shadow-2xl shadow-black/60 p-4">
+                                    <div class="flex items-center justify-between mb-3">
+                                        <span class="text-sm font-bold text-white">🎙️ Giọng đọc &amp; tốc độ</span>
+                                        <button type="button" onclick="closeVoicePanel()" class="w-6 h-6 rounded-md text-slate-400 hover:text-white hover:bg-slate-700 text-sm leading-none" title="Đóng">✕</button>
+                                    </div>
+
+                                    <!-- Tốc độ -->
+                                    <div class="mb-4">
+                                        <div class="flex items-center justify-between mb-1.5">
+                                            <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300">Tốc độ</span>
+                                            <span id="ttsRateLabel" class="text-xs font-mono font-bold text-indigo-300">0.95x</span>
+                                        </div>
+                                        <input id="ttsRateSlider" type="range" min="0.5" max="1.5" step="0.05" value="0.95" oninput="setTtsRate(this.value)" class="w-full accent-indigo-500 cursor-pointer">
+                                        <div class="flex gap-1.5 mt-2">
+                                            <button type="button" onclick="setTtsRate(0.6, true)" class="flex-1 text-[11px] font-semibold py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">Chậm</button>
+                                            <button type="button" onclick="setTtsRate(0.8, true)" class="flex-1 text-[11px] font-semibold py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">0.8x</button>
+                                            <button type="button" onclick="setTtsRate(1, true)" class="flex-1 text-[11px] font-semibold py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">Chuẩn</button>
+                                            <button type="button" onclick="setTtsRate(1.25, true)" class="flex-1 text-[11px] font-semibold py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700">1.25x</button>
+                                        </div>
+                                    </div>
+
+                                    <!-- Bộ lọc giọng -->
+                                    <div class="flex items-center justify-between gap-2 mb-2">
+                                        <span class="text-[11px] font-bold uppercase tracking-wider text-slate-300">Giọng (<span id="voiceCount">0</span>)</span>
+                                        <select id="voiceLangFilter" onchange="setVoiceFilter(this.value)" class="text-xs bg-slate-800 text-slate-200 border border-slate-700 rounded-md px-2 py-1 max-w-[9rem]"></select>
+                                    </div>
+                                    <label class="flex items-center gap-2 text-xs text-slate-300 mb-2 cursor-pointer">
+                                        <input id="voiceShowAll" type="checkbox" onchange="setVoiceShowAll(this.checked)" class="accent-indigo-500">
+                                        Hiện giọng của mọi ngôn ngữ
+                                    </label>
+
+                                    <div id="voiceList" class="max-h-56 overflow-y-auto space-y-1 pr-1"></div>
+
+                                    <div class="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-slate-700/80">
+                                        <span class="text-[11px] text-slate-400">Bấm vào giọng để nghe thử</span>
+                                        <button type="button" onclick="speakCurrentEnglishSentence()" class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white transition">▶ Nghe câu</button>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
                         <div id="sourceSentenceDisplay" class="text-lg sm:text-xl font-semibold text-white leading-relaxed"></div>
@@ -437,6 +481,59 @@
         </aside>
 
     </main>
+
+    <!-- MODAL XUẤT GOOGLE SHEETS -->
+    <div id="exportModal" class="hidden fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onclick="if(event.target===this) closeExportModal()">
+        <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-[#0f172a] border border-indigo-500/40 shadow-2xl p-5 space-y-4">
+            <div class="flex items-center justify-between">
+                <h3 class="text-base font-bold text-white">📤 Xuất từ vựng sang Google Sheets</h3>
+                <button type="button" onclick="closeExportModal()" class="text-slate-400 hover:text-white text-lg leading-none">✕</button>
+            </div>
+
+            <!-- Chọn phạm vi -->
+            <div class="space-y-2 text-sm text-slate-200">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="exportScope" value="today" checked onchange="updateExportInfo()" class="accent-indigo-500">
+                    <span>Từ đã luyện <strong>hôm nay</strong>, chưa xuất (<span id="exportCountToday">0</span>)</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="exportScope" value="all" onchange="updateExportInfo()" class="accent-indigo-500">
+                    <span><strong>Toàn bộ</strong> kho từ (<span id="exportCountAll">0</span>)</span>
+                </label>
+                <p class="text-[11px] text-slate-400">Mỗi dòng có cột <strong>Ngày</strong> (ngày bạn luyện từ đó): <span id="exportDateText" class="font-mono text-indigo-300"></span></p>
+            </div>
+
+            <!-- Cách 1: gửi thẳng -->
+            <div class="rounded-xl p-3.5 bg-[#1e293b] border border-slate-700 space-y-2.5">
+                <div class="text-xs font-bold uppercase tracking-wider text-emerald-400">Cách 1 · Gửi thẳng lên Google Sheets</div>
+                <input type="text" id="sheetsUrlInput" placeholder="Dán link Web App (kết thúc bằng /exec)..." class="w-full bg-[#0b0f19] border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+                <button type="button" id="btnSendSheets" onclick="sendToSheets()" class="w-full py-2.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-sm font-bold transition disabled:opacity-50">🚀 Gửi lên Sheet</button>
+
+                <details class="text-xs text-slate-300">
+                    <summary class="cursor-pointer text-indigo-300 font-semibold">Cài đặt 1 lần (chưa có link?)</summary>
+                    <ol class="list-decimal pl-5 mt-2 space-y-1.5 leading-relaxed">
+                        <li>Mở Google Sheet <strong>Từ vựng</strong> → menu <strong>Tiện ích mở rộng</strong> → <strong>Apps Script</strong>.</li>
+                        <li>Xóa code cũ, dán đoạn code bên dưới, bấm <strong>Lưu</strong>.</li>
+                        <li>Bấm <strong>Triển khai</strong> → <strong>Tùy chọn triển khai mới</strong> → loại <strong>Ứng dụng web</strong>.</li>
+                        <li>"Thực thi với tư cách": <strong>Tôi</strong>. "Ai có quyền truy cập": <strong>Bất kỳ ai</strong>. Bấm Triển khai, cấp quyền khi Google hỏi.</li>
+                        <li>Copy <strong>URL ứng dụng web</strong> dán vào ô ở trên. Chỉ cần làm 1 lần, link được lưu trong trình duyệt này.</li>
+                    </ol>
+                    <textarea id="appsScriptCode" readonly rows="11" class="w-full mt-2 bg-[#0b0f19] border border-slate-700 rounded-lg p-2 font-mono text-[11px] text-slate-200"></textarea>
+                    <button type="button" onclick="copyAppsScriptCode()" class="mt-1.5 text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200">📋 Sao chép code</button>
+                </details>
+            </div>
+
+            <!-- Cách 2: file / dán -->
+            <div class="rounded-xl p-3.5 bg-[#1e293b] border border-slate-700 space-y-2.5">
+                <div class="text-xs font-bold uppercase tracking-wider text-amber-400">Cách 2 · Không cần cài đặt</div>
+                <div class="grid grid-cols-2 gap-2">
+                    <button type="button" onclick="downloadVocabCsv()" class="py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-100 text-xs font-bold transition">⬇️ Tải file CSV</button>
+                    <button type="button" onclick="copyVocabForSheets()" class="py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-100 text-xs font-bold transition">📋 Sao chép để dán</button>
+                </div>
+                <p class="text-[11px] text-slate-400 leading-relaxed">CSV: trong Google Sheets chọn <strong>Tệp → Nhập → Tải lên</strong> → "Chèn trang tính mới" hoặc "Thêm vào trang tính hiện tại". Sao chép: bấm vào ô A1 (hoặc ô trống dưới dữ liệu cũ) rồi nhấn Ctrl+V.</p>
+            </div>
+        </div>
+    </div>
 
     <!-- KHUNG THÔNG BÁO TOAST (KHÔNG DÙNG ALERT) -->
     <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
@@ -763,6 +860,7 @@ Chủ đề ngữ cảnh: ${topic}`;
                         const existing = appState.vocabBank.find(item => item.word.toLowerCase() === card.word.toLowerCase());
                         if (existing) {
                             existing.count = (existing.count || 1) + 1;
+                            existing.lastDate = todayISO();
                             existing.meaningVi = card.meaningVi || existing.meaningVi;
                             existing.pos = card.pos || existing.pos;
                             existing.ipa = card.ipa || existing.ipa;
@@ -774,7 +872,9 @@ Chủ đề ngữ cảnh: ${topic}`;
                                 ipa: card.ipa,
                                 meaningVi: card.meaningVi,
                                 collocation: card.collocation,
-                                count: 1
+                                count: 1,
+                                addedDate: todayISO(),
+                                lastDate: todayISO()
                             });
                         }
                     });
@@ -1043,6 +1143,7 @@ Bản dịch của học viên: "${userTranslation}"`;
                 score,
                 words: [...ch.words],
                 mode: ch.mode,
+                date: todayISO(),
                 timestamp: new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
             });
             saveStorage();
@@ -1218,6 +1319,28 @@ Bản dịch của học viên: "${userTranslation}"`;
             speakText(sentence);
         }
 
+        // ---------- Cài đặt giọng đọc (lưu lại cho lần sau) ----------
+        const ttsSettings = { voiceURI: "", rate: 0.95, lang: "all", showAll: false };
+        try { Object.assign(ttsSettings, JSON.parse(localStorage.getItem("ttsSettings") || "{}")); } catch (e) {}
+        function saveTtsSettings() {
+            try { localStorage.setItem("ttsSettings", JSON.stringify(ttsSettings)); } catch (e) {}
+        }
+
+        let ttsVoices = [];
+        function refreshVoices() {
+            if (!("speechSynthesis" in window)) return;
+            ttsVoices = window.speechSynthesis.getVoices() || [];
+            renderVoicePanel();
+        }
+        if ("speechSynthesis" in window) {
+            refreshVoices();
+            window.speechSynthesis.onvoiceschanged = refreshVoices;
+        }
+
+        function getSelectedVoice() {
+            return ttsVoices.find(v => v.voiceURI === ttsSettings.voiceURI) || null;
+        }
+
         function speakText(text) {
             if (!("speechSynthesis" in window)) {
                 showToast("Trình duyệt của bạn không hỗ trợ phát âm.");
@@ -1225,10 +1348,334 @@ Bản dịch của học viên: "${userTranslation}"`;
             }
             window.speechSynthesis.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = "en-US";
-            utterance.rate = 0.95;
+            const voice = getSelectedVoice();
+            if (voice) {
+                utterance.voice = voice;
+                utterance.lang = voice.lang;
+            } else {
+                utterance.lang = "en-US";
+            }
+            utterance.rate = Number(ttsSettings.rate) || 0.95;
             window.speechSynthesis.speak(utterance);
         }
+
+        // ---------- Nhấn 1 lần = nghe, nhấn đúp = mở bảng giọng/tốc độ ----------
+        let listenClickTimer = null;
+        function handleListenClick() {
+            if (listenClickTimer) {
+                clearTimeout(listenClickTimer);
+                listenClickTimer = null;
+                toggleVoicePanel();
+                return;
+            }
+            listenClickTimer = setTimeout(() => {
+                listenClickTimer = null;
+                speakCurrentEnglishSentence();
+            }, 260);
+        }
+
+        function toggleVoicePanel() {
+            const panel = document.getElementById("voicePanel");
+            if (panel.classList.contains("hidden")) {
+                window.speechSynthesis && window.speechSynthesis.cancel();
+                renderVoicePanel();
+                panel.classList.remove("hidden");
+                const active = document.querySelector("#voiceList [data-active='1']");
+                if (active) active.scrollIntoView({ block: "nearest" });
+            } else {
+                closeVoicePanel();
+            }
+        }
+        function closeVoicePanel() {
+            document.getElementById("voicePanel").classList.add("hidden");
+        }
+        document.addEventListener("mousedown", (e) => {
+            const panel = document.getElementById("voicePanel");
+            if (!panel || panel.classList.contains("hidden")) return;
+            if (!panel.contains(e.target) && !document.getElementById("btnListen").contains(e.target)) closeVoicePanel();
+        });
+        document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeVoicePanel(); });
+
+        function setTtsRate(value, syncSlider) {
+            const rate = Math.min(1.5, Math.max(0.5, Number(value) || 1));
+            ttsSettings.rate = rate;
+            document.getElementById("ttsRateLabel").textContent = rate.toFixed(2).replace(/0$/, "") + "x";
+            if (syncSlider) document.getElementById("ttsRateSlider").value = rate;
+            saveTtsSettings();
+        }
+        function setVoiceFilter(lang) {
+            ttsSettings.lang = lang;
+            saveTtsSettings();
+            renderVoicePanel();
+        }
+        function setVoiceShowAll(flag) {
+            ttsSettings.showAll = !!flag;
+            ttsSettings.lang = "all";
+            saveTtsSettings();
+            renderVoicePanel();
+        }
+
+        const LANG_FLAGS = { "en-US": "🇺🇸", "en-GB": "🇬🇧", "en-AU": "🇦🇺", "en-IN": "🇮🇳", "en-CA": "🇨🇦", "en-IE": "🇮🇪", "en-ZA": "🇿🇦", "en-NZ": "🇳🇿", "en-SG": "🇸🇬", "en-NG": "🇳🇬", "en-PH": "🇵🇭", "vi-VN": "🇻🇳" };
+        function voiceLangLabel(lang) {
+            const l = (lang || "").replace("_", "-");
+            return (LANG_FLAGS[l] || "🌐") + " " + l;
+        }
+        function isPremiumVoice(v) {
+            return /natural|neural|google|online|premium|enhanced/i.test(v.name);
+        }
+
+        function renderVoicePanel() {
+            const list = document.getElementById("voiceList");
+            if (!list) return;
+
+            const pool = ttsVoices.filter(v => ttsSettings.showAll || /^en/i.test(v.lang));
+            const langs = [...new Set(pool.map(v => v.lang.replace("_", "-")))].sort();
+
+            if (ttsSettings.lang !== "all" && !langs.includes(ttsSettings.lang)) ttsSettings.lang = "all";
+
+            const filter = document.getElementById("voiceLangFilter");
+            filter.innerHTML = "";
+            const optAll = new Option("Tất cả giọng", "all");
+            filter.add(optAll);
+            langs.forEach(l => filter.add(new Option(voiceLangLabel(l), l)));
+            filter.value = ttsSettings.lang;
+
+            document.getElementById("voiceShowAll").checked = ttsSettings.showAll;
+            document.getElementById("ttsRateSlider").value = ttsSettings.rate;
+            document.getElementById("ttsRateLabel").textContent = Number(ttsSettings.rate).toFixed(2).replace(/0$/, "") + "x";
+
+            const shown = pool
+                .filter(v => ttsSettings.lang === "all" || v.lang.replace("_", "-") === ttsSettings.lang)
+                .sort((a, b) => {
+                    const pa = /^en-US/i.test(a.lang) ? 0 : /^en-GB/i.test(a.lang) ? 1 : 2;
+                    const pb = /^en-US/i.test(b.lang) ? 0 : /^en-GB/i.test(b.lang) ? 1 : 2;
+                    return pa - pb || (isPremiumVoice(b) - isPremiumVoice(a)) || a.name.localeCompare(b.name);
+                });
+
+            document.getElementById("voiceCount").textContent = shown.length;
+            list.innerHTML = "";
+
+            // Mục giọng mặc định của trình duyệt
+            const items = [{ voice: null }].concat(shown.map(v => ({ voice: v })));
+            items.forEach(({ voice }) => {
+                const active = voice ? voice.voiceURI === ttsSettings.voiceURI : !ttsSettings.voiceURI || !getSelectedVoice();
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.dataset.active = active ? "1" : "0";
+                btn.className = "w-full text-left px-2.5 py-1.5 rounded-lg border text-xs flex items-center justify-between gap-2 transition " +
+                    (active ? "bg-indigo-500/25 border-indigo-400/60 text-white" : "bg-slate-800/60 border-slate-700 text-slate-200 hover:bg-slate-700");
+
+                const name = document.createElement("span");
+                name.className = "truncate font-semibold";
+                name.textContent = voice ? ((isPremiumVoice(voice) ? "⭐ " : "") + voice.name.replace(/^(Microsoft|Google)\s+/i, "$1 ")) : "🔁 Mặc định của trình duyệt";
+
+                const meta = document.createElement("span");
+                meta.className = "shrink-0 text-[10px] text-slate-400";
+                meta.textContent = voice ? voiceLangLabel(voice.lang) : "";
+
+                btn.append(name, meta);
+                btn.onclick = () => {
+                    ttsSettings.voiceURI = voice ? voice.voiceURI : "";
+                    saveTtsSettings();
+                    renderVoicePanel();
+                    speakCurrentEnglishSentence();
+                };
+                list.appendChild(btn);
+            });
+
+            if (!pool.length) {
+                const empty = document.createElement("div");
+                empty.className = "text-xs text-slate-400 py-2";
+                empty.textContent = "Chưa tải được danh sách giọng. Thử tải lại trang hoặc dùng Chrome/Edge.";
+                list.appendChild(empty);
+            }
+        }
+
+        // ==========================================
+        // 8. XUẤT TỪ VỰNG SANG GOOGLE SHEETS / CSV (CÓ NGÀY THÁNG)
+        // ==========================================
+        const SHEETS_URL_KEY = "vocabflow_sheets_url";
+        const SHEET_HEADER = ["Ngày", "Từ vựng", "Loại từ", "Phiên âm", "Nghĩa tiếng Việt", "Cụm từ đi kèm", "Số lần luyện"];
+
+        const APPS_SCRIPT_CODE = `function doPost(e) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+  const data = JSON.parse(e.postData.contents);
+  if (sh.getLastRow() === 0) {
+    sh.appendRow(data.header);
+    sh.getRange(1, 1, 1, data.header.length).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  const start = sh.getLastRow() + 1;
+  const rows = data.rows.map(r => {
+    const p = String(r[0]).split('-');
+    return [new Date(+p[0], +p[1] - 1, +p[2])].concat(r.slice(1));
+  });
+  if (rows.length) {
+    sh.getRange(start, 1, rows.length, rows[0].length).setValues(rows);
+    sh.getRange(start, 1, rows.length, 1).setNumberFormat('dd/MM/yyyy');
+  }
+  return ContentService
+    .createTextOutput(JSON.stringify({ ok: true, added: rows.length }))
+    .setMimeType(ContentService.MimeType.JSON);
+}`;
+
+        function todayISO() {
+            const d = new Date();
+            const pad = n => String(n).padStart(2, "0");
+            return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+        }
+        function isoToVi(iso) {
+            const p = String(iso).split("-");
+            return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : iso;
+        }
+
+        function getExportScope() {
+            const r = document.querySelector('input[name="exportScope"]:checked');
+            return r ? r.value : "today";
+        }
+        function getExportItems() {
+            const today = todayISO();
+            if (getExportScope() === "all") return appState.vocabBank.slice();
+            return appState.vocabBank.filter(i => i.lastDate === today && i.exportedOn !== today);
+        }
+        function buildExportRows() {
+            const today = todayISO();
+            // Từ cũ (lưu trước khi có tính năng ngày) sẽ lấy ngày xuất làm ngày
+            return getExportItems().slice().reverse().map(i => [
+                i.lastDate || today,
+                i.word || "",
+                i.pos || "",
+                i.ipa || "",
+                i.meaningVi || "",
+                i.collocation || "",
+                i.count || 1
+            ]);
+        }
+
+        function openExportModal() {
+            document.getElementById("sheetsUrlInput").value = localStorage.getItem(SHEETS_URL_KEY) || "";
+            document.getElementById("appsScriptCode").value = APPS_SCRIPT_CODE;
+            document.getElementById("exportDateText").textContent = isoToVi(todayISO());
+            document.getElementById("exportModal").classList.remove("hidden");
+            // Mặc định chọn "toàn bộ" nếu hôm nay chưa có từ nào để xuất
+            const todayRadio = document.querySelector('input[name="exportScope"][value="today"]');
+            const allRadio = document.querySelector('input[name="exportScope"][value="all"]');
+            todayRadio.checked = true;
+            updateExportInfo();
+            if (getExportItems().length === 0 && appState.vocabBank.length > 0) {
+                allRadio.checked = true;
+                updateExportInfo();
+            }
+        }
+        function closeExportModal() {
+            document.getElementById("exportModal").classList.add("hidden");
+        }
+        function updateExportInfo() {
+            const today = todayISO();
+            document.getElementById("exportCountToday").textContent =
+                appState.vocabBank.filter(i => i.lastDate === today && i.exportedOn !== today).length;
+            document.getElementById("exportCountAll").textContent = appState.vocabBank.length;
+        }
+
+        function markExported(items) {
+            const today = todayISO();
+            items.forEach(i => { i.exportedOn = today; });
+            saveStorage();
+            updateExportInfo();
+        }
+
+        async function sendToSheets() {
+            const items = getExportItems();
+            const rows = buildExportRows();
+            if (!rows.length) { showToast("Chưa có từ nào để xuất."); return; }
+
+            const url = document.getElementById("sheetsUrlInput").value.trim();
+            if (!/^https:\/\/script\.google\.com\/.+\/exec/.test(url)) {
+                showToast("Link Web App chưa đúng (phải bắt đầu bằng https://script.google.com và kết thúc /exec).");
+                return;
+            }
+            try { localStorage.setItem(SHEETS_URL_KEY, url); } catch (e) {}
+
+            const btn = document.getElementById("btnSendSheets");
+            btn.disabled = true;
+            btn.textContent = "Đang gửi...";
+            const body = JSON.stringify({ header: SHEET_HEADER, rows });
+
+            try {
+                // text/plain để tránh preflight CORS của Apps Script
+                const res = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body
+                });
+                const out = await res.json();
+                if (!out.ok) throw new Error("Script trả về lỗi");
+                markExported(items);
+                showToast("Đã thêm " + out.added + " từ vào Google Sheets!");
+                closeExportModal();
+            } catch (err) {
+                console.warn("Gửi bình thường lỗi, thử chế độ no-cors:", err);
+                try {
+                    await fetch(url, { method: "POST", mode: "no-cors", headers: { "Content-Type": "text/plain;charset=utf-8" }, body });
+                    markExported(items);
+                    showToast("Đã gửi " + rows.length + " từ. Mở Sheet kiểm tra giúp mình nhé!");
+                    closeExportModal();
+                } catch (err2) {
+                    showToast("Không gửi được. Kiểm tra lại link /exec và quyền 'Bất kỳ ai', hoặc dùng Cách 2.");
+                }
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "🚀 Gửi lên Sheet";
+            }
+        }
+
+        function csvCell(v) {
+            const s = String(v ?? "");
+            return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+        }
+        function downloadVocabCsv() {
+            const items = getExportItems();
+            const rows = buildExportRows();
+            if (!rows.length) { showToast("Chưa có từ nào để xuất."); return; }
+            const viRows = rows.map(r => [isoToVi(r[0])].concat(r.slice(1)));
+            const csv = [SHEET_HEADER].concat(viRows).map(r => r.map(csvCell).join(",")).join("\r\n");
+            // BOM để Google Sheets / Excel đọc đúng tiếng Việt
+            const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "tu-vung_" + todayISO() + ".csv";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+            markExported(items);
+            showToast("Đã tải file tu-vung_" + todayISO() + ".csv");
+        }
+
+        function copyVocabForSheets() {
+            const items = getExportItems();
+            const rows = buildExportRows();
+            if (!rows.length) { showToast("Chưa có từ nào để xuất."); return; }
+            const clean = v => String(v ?? "").replace(/[\t\r\n]+/g, " ");
+            const tsv = rows.map(r => [isoToVi(r[0])].concat(r.slice(1)).map(clean).join("\t")).join("\n");
+            const temp = document.createElement("textarea");
+            temp.value = tsv;
+            document.body.appendChild(temp);
+            temp.select();
+            document.execCommand("copy");
+            document.body.removeChild(temp);
+            markExported(items);
+            showToast("Đã sao chép " + rows.length + " dòng. Qua Google Sheets bấm Ctrl+V!");
+        }
+
+        function copyAppsScriptCode() {
+            const ta = document.getElementById("appsScriptCode");
+            ta.select();
+            document.execCommand("copy");
+            showToast("Đã sao chép code Apps Script!");
+        }
+
+        document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeExportModal(); });
 
         function copyTextToClipboard(text) {
             const temp = document.createElement("textarea");
