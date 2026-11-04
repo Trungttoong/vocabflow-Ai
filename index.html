@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="vi" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VocabFlow AI - Luyện Dịch Câu & Nhớ Từ Vựng</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        darkBg: '#0b0f19',
+                        darkCard: '#111827',
+                        darkInner: '#1e293b',
+                        darkBorder: '#334155',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Cố định hoàn toàn giao diện ở chế độ tối sâu (#0b0f19) */
+        body {
+            background-color: #0b0f19;
+            color: #f8fafc;
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* Tùy chỉnh thanh cuộn tối màu */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0b0f19;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        /* Highlight từ vựng trong câu tiếng Anh */
+        .word-highlight {
+            background: linear-gradient(120deg, rgba(99, 102, 241, 0.28) 0%, rgba(168, 85, 247, 0.28) 100%);
+            border-bottom: 2px solid #818cf8;
+            color: #e0e7ff;
+            padding: 1px 6px;
+            border-radius: 6px;
+            font-weight: 700;
+        }
+
+        /* Hiệu ứng mượt cho thẻ và nút */
+        .card-surface {
+            background-color: #111827;
+            border: 1px solid #1f2937;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+
+        .inner-surface {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-[#0b0f19] text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
+
+    <!-- HEADER CỐ ĐỊNH Ở CHẾ ĐỘ TỐI -->
+    <header class="sticky top-0 z-40 bg-[#0b0f19]/90 backdrop-blur-md border-b border-slate-800">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3.5 flex items-center justify-between gap-4">
+            <!-- Logo & Tên ứng dụng -->
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25 text-xl">
+                    🧠
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-lg sm:text-xl font-extrabold tracking-tight bg-gradient-to-r from-indigo-400 via-purple-300 to-pink-300 bg-clip-text text-transparent">
+                            VocabFlow AI
+                        </h1>
+                        <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
+                            Dark Mode
+                        </span>
+                        <button type="button" onclick="askApiKey()" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25">🔑 API Key</button>
+                    </div>
+                    <p class="text-xs text-slate-400">Nhập từ vựng &rarr; Tạo câu ngữ cảnh &rarr; Tập dịch &amp; Nhớ từ sâu</p>
+                </div>
+            </div>
+
+            <!-- Thống kê học tập -->
+            <div class="flex items-center gap-2 sm:gap-3">
+                <div class="flex items-center gap-3 bg-[#111827] border border-slate-800 px-3.5 py-2 rounded-xl text-xs font-semibold">
+                    <div class="flex items-center gap-1.5 text-amber-400" title="Tổng số câu đã luyện dịch">
+                        <span>🔥</span>
+                        <span id="statTotalSentences">0</span>
+                        <span class="hidden sm:inline text-slate-400 font-normal">câu</span>
+                    </div>
+                    <span class="text-slate-700">|</span>
+                    <div class="flex items-center gap-1.5 text-emerald-400" title="Điểm trung bình các lần dịch">
+                        <span>🎯</span>
+                        <span id="statAvgScore">--</span>
+                    </div>
+                    <span class="text-slate-700">|</span>
+                    <div class="flex items-center gap-1.5 text-indigo-400" title="Số từ vựng trong kho">
+                        <span>📚</span>
+                        <span id="statVocabCount">0</span>
+                        <span class="hidden sm:inline text-slate-400 font-normal">từ</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- NỘI DUNG CHÍNH -->
+    <main class="max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1">
+        
+        <!-- CỘT TRÁI (8 CỘT): NHẬP TỪ VỰNG, LUYỆN DỊCH & KẾT QUẢ CHẤM -->
+        <div class="lg:col-span-8 flex flex-col gap-6">
+            
+            <!-- BƯỚC 1: NHẬP TỪ VỰNG & CẤU HÌNH CÂU -->
+            <section class="card-surface rounded-2xl p-5 sm:p-6">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+                    <div class="flex items-center gap-2.5">
+                        <span class="w-7 h-7 rounded-lg bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 font-bold text-sm flex items-center justify-center">1</span>
+                        <h2 class="text-base sm:text-lg font-bold text-white">Nhập từ vựng muốn luyện nhớ</h2>
+                    </div>
+
+                    <!-- Các bộ từ gợi ý nhanh -->
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <span class="text-xs text-slate-400 mr-1">Gợi ý nhanh:</span>
+                        <button type="button" onclick="loadPresetWords(['absorb', 'comprehend', 'knowledge'])" class="text-xs px-2.5 py-1 rounded-lg bg-[#1e293b] hover:bg-indigo-600/30 text-slate-300 hover:text-indigo-200 border border-slate-700 hover:border-indigo-500/50 transition">
+                            + Học tập
+                        </button>
+                        <button type="button" onclick="loadPresetWords(['resilient', 'overcome', 'obstacle'])" class="text-xs px-2.5 py-1 rounded-lg bg-[#1e293b] hover:bg-indigo-600/30 text-slate-300 hover:text-indigo-200 border border-slate-700 hover:border-indigo-500/50 transition">
+                            + Vượt khó
+                        </button>
+                        <button type="button" onclick="loadPresetWords(['negotiate', 'deadline', 'feasible'])" class="text-xs px-2.5 py-1 rounded-lg bg-[#1e293b] hover:bg-indigo-600/30 text-slate-300 hover:text-indigo-200 border border-slate-700 hover:border-indigo-500/50 transition">
+                            + Công sở
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Ô nhập Tag Chips -->
+                <div id="wordChipContainer" onclick="document.getElementById('vocabInput').focus()" class="inner-surface rounded-xl p-3 min-h-[60px] flex flex-wrap items-center gap-2 cursor-text focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition">
+                    <div id="chipsList" class="flex flex-wrap items-center gap-2"></div>
+                    <input 
+                        type="text" 
+                        id="vocabInput" 
+                        class="flex-1 min-w-[180px] bg-transparent text-slate-100 placeholder-slate-500 text-sm sm:text-base focus:outline-none py-1" 
+                        placeholder="Nhập 1 hoặc nhiều từ/cụm từ (nhấn Enter hoặc dấu phẩy để thêm)..." 
+                        autocomplete="off"
+                    >
+                </div>
+
+                <div class="flex items-center justify-between mt-2 text-xs text-slate-400">
+                    <span>💡 Bạn có thể nhập 1 từ (vd: <code class="text-indigo-300 font-mono">absorb</code>) hoặc nhiều từ cùng lúc để AI ghép vào 1 câu.</span>
+                    <div class="flex items-center gap-3">
+                        <span id="wordCountBadge" class="font-semibold text-indigo-400">0 từ đã chọn</span>
+                        <button type="button" id="btnClearWords" onclick="clearAllSelectedWords()" class="hidden text-rose-400 hover:text-rose-300 underline">Xóa hết</button>
+                    </div>
+                </div>
+
+                <!-- Tùy chọn Chiều dịch, Độ khó CEFR, Chủ đề -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5">
+                    <!-- Chiều dịch -->
+                    <div>
+                        <label class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Chiều luyện dịch</label>
+                        <div class="grid grid-cols-2 bg-[#1e293b] p-1 rounded-xl border border-slate-700">
+                            <button type="button" id="modeEnToVi" onclick="setPracticeMode('en-to-vi')" class="py-2 px-2 rounded-lg text-xs font-bold transition bg-indigo-600 text-white shadow">
+                                Anh &rarr; Việt
+                            </button>
+                            <button type="button" id="modeViToEn" onclick="setPracticeMode('vi-to-en')" class="py-2 px-2 rounded-lg text-xs font-bold transition text-slate-400 hover:text-slate-200">
+                                Việt &rarr; Anh
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Độ khó CEFR -->
+                    <div>
+                        <label for="difficultySelect" class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Mức độ câu (CEFR)</label>
+                        <select id="difficultySelect" class="w-full inner-surface rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-medium text-slate-100 focus:outline-none focus:border-indigo-500">
+                            <option value="A2-B1" class="bg-[#111827] text-slate-100">🌱 Cơ bản - Dễ nhớ (A2-B1)</option>
+                            <option value="B2" selected class="bg-[#111827] text-slate-100">🔥 Trung bình - Tự nhiên (B2)</option>
+                            <option value="C1" class="bg-[#111827] text-slate-100">🚀 Nâng cao - Học thuật (C1)</option>
+                        </select>
+                    </div>
+
+                    <!-- Chủ đề ngữ cảnh -->
+                    <div>
+                        <label for="topicSelect" class="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Chủ đề ngữ cảnh</label>
+                        <select id="topicSelect" class="w-full inner-surface rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-medium text-slate-100 focus:outline-none focus:border-indigo-500">
+                            <option value="Giao tiếp hàng ngày" selected class="bg-[#111827] text-slate-100">💬 Giao tiếp & Đời sống</option>
+                            <option value="Công sở & Kinh doanh" class="bg-[#111827] text-slate-100">💼 Công sở & Kinh doanh</option>
+                            <option value="Học thuật & IELTS" class="bg-[#111827] text-slate-100">🎓 Học thuật & IELTS</option>
+                            <option value="Công nghệ & Khoa học" class="bg-[#111827] text-slate-100">💻 Công nghệ & Khoa học</option>
+                            <option value="Du lịch & Văn hóa" class="bg-[#111827] text-slate-100">✈️ Du lịch & Văn hóa</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Thanh hành động Tạo câu -->
+                <div class="mt-5 pt-4 border-t border-slate-800/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                    <p id="modeDescriptionText" class="text-xs text-slate-300">
+                        AI sẽ đặt 1 câu <strong class="text-indigo-400">Tiếng Anh</strong> chứa từ vựng của bạn để bạn tập dịch sang <strong class="text-emerald-400">Tiếng Việt</strong>.
+                    </p>
+                    <button 
+                        type="button" 
+                        id="btnGenerateSentence" 
+                        onclick="handleGenerateSentence()" 
+                        class="px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-sm shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 transition transform active:scale-[0.99] disabled:opacity-50"
+                    >
+                        <span>✨ Tạo câu luyện dịch</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- BƯỚC 2: KHU VỰC LUYỆN DỊCH & THẺ TỪ VỰNG RÕ NÉT -->
+            <section id="practiceArenaSection" class="card-surface rounded-2xl p-5 sm:p-6">
+                
+                <!-- Trạng thái chưa có câu -->
+                <div id="emptyArenaState" class="py-10 px-4 text-center">
+                    <div class="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center mx-auto mb-4 text-3xl">
+                        📖
+                    </div>
+                    <h3 class="text-base sm:text-lg font-bold text-slate-100">Sẵn sàng tạo câu để bạn tập dịch &amp; nhớ từ</h3>
+                    <p class="text-xs sm:text-sm text-slate-400 max-w-md mx-auto mt-1.5">
+                        Nhập từ vựng ở khung bên trên rồi nhấn <strong>"Tạo câu luyện dịch"</strong>. Nghĩa tiếng Việt, phiên âm IPA và cụm từ đi kèm sẽ hiển thị rõ ràng ngay lập tức.
+                    </p>
+                </div>
+
+                <!-- Trạng thái đang tải -->
+                <div id="loadingSentenceState" class="hidden py-12 px-4 text-center">
+                    <div class="inline-block w-10 h-10 border-4 border-indigo-500/30 border-t-indigo-400 rounded-full animate-spin mb-3"></div>
+                    <p class="text-sm font-semibold text-slate-200">AI đang biên soạn câu tự nhiên và thẻ từ vựng...</p>
+                    <p class="text-xs text-slate-400 mt-1">Đang phân tích ngữ cảnh phù hợp nhất cho từ của bạn</p>
+                </div>
+
+                <!-- Trạng thái có câu luyện tập -->
+                <div id="activeSentenceContent" class="hidden">
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+                        <div class="flex items-center gap-2.5">
+                            <span class="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-bold text-sm flex items-center justify-center">2</span>
+                            <h2 class="text-base sm:text-lg font-bold text-white">Đọc thẻ từ &amp; Luyện dịch câu</h2>
+                        </div>
+                        <button 
+                            type="button" 
+                            onclick="handleGenerateSentence()" 
+                            class="text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#1e293b] hover:bg-slate-700 text-slate-200 border border-slate-700 flex items-center gap-1.5 transition"
+                        >
+                            <span>🔄</span> Đổi câu khác cùng từ này
+                        </button>
+                    </div>
+
+                    <!-- Khung hiển thị câu gốc cần dịch -->
+                    <div id="sourceSentenceCard" class="rounded-xl p-4 sm:p-5 bg-gradient-to-br from-indigo-950/60 via-[#1e293b] to-[#1e293b] border border-indigo-500/30 relative mb-5">
+                        <div class="flex items-center justify-between gap-2 mb-2">
+                            <span id="sourceLangLabel" class="text-[11px] font-bold uppercase tracking-wider text-indigo-300">
+                                Câu Tiếng Anh cần dịch:
+                            </span>
+                            <button 
+                                type="button" 
+                                onclick="speakCurrentEnglishSentence()" 
+                                class="px-2.5 py-1 rounded-lg bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-200 border border-indigo-500/30 text-xs font-semibold flex items-center gap-1.5 transition"
+                                title="Nghe phát âm câu tiếng Anh"
+                            >
+                                <span>🔊</span> Nghe câu
+                            </button>
+                        </div>
+
+                        <div id="sourceSentenceDisplay" class="text-lg sm:text-xl font-semibold text-white leading-relaxed"></div>
+
+                        <!-- Nhắc từ bắt buộc khi ở chế độ Việt -> Anh -->
+                        <div id="viToEnTargetReminder" class="hidden mt-4 pt-3 border-t border-slate-700/80 flex flex-wrap items-center gap-2">
+                            <span class="text-xs text-slate-300 font-medium">Từ vựng mục tiêu cần dùng trong câu dịch:</span>
+                            <div id="viToEnTargetPills" class="flex flex-wrap gap-1.5"></div>
+                        </div>
+                    </div>
+
+                    <!-- THẺ TỪ VỰNG TRỢ GIÚP (HIỂN THỊ RÕ RÀNG 100%, KHÔNG LÀM MỜ, KHÔNG ẨN) -->
+                    <div class="mb-5">
+                        <div class="flex items-center justify-between mb-2.5">
+                            <span class="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                                <span>🏷️</span> Thẻ từ vựng trong câu (Hiển thị rõ nghĩa &amp; cụm từ)
+                            </span>
+                        </div>
+                        <div id="wordCardsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3.5"></div>
+                    </div>
+
+                    <!-- Ô nhập bản dịch của người dùng -->
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label for="userTranslationInput" id="translationInputLabel" class="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                                ✍️ Nhập bản dịch của bạn:
+                            </label>
+                            <span class="text-[11px] text-slate-400">Nhấn <kbd class="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 font-mono text-[10px]">Ctrl + Enter</kbd> để chấm nhanh</span>
+                        </div>
+                        <textarea 
+                            id="userTranslationInput" 
+                            rows="3" 
+                            class="w-full inner-surface rounded-xl p-3.5 text-sm sm:text-base text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition resize-y"
+                            placeholder="Gõ câu dịch của bạn vào đây để AI chấm điểm và sửa lỗi chi tiết..."
+                        ></textarea>
+
+                        <div class="mt-3 flex justify-end">
+                            <button 
+                                type="button" 
+                                id="btnCheckAnswer" 
+                                onclick="handleCheckTranslation()" 
+                                class="w-full sm:w-auto px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-emerald-600/25 flex items-center justify-center gap-2 transition disabled:opacity-50"
+                            >
+                                <span>✅ Chấm điểm &amp; Sửa bản dịch</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- BƯỚC 3: KẾT QUẢ CHẤM ĐIỂM CHI TIẾT -->
+            <section id="gradingResultSection" class="hidden card-surface rounded-2xl p-5 sm:p-6 border-t-4 border-t-indigo-500">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 pb-4 mb-5 border-b border-slate-800">
+                    <div id="scoreCircleBadge" class="w-20 h-20 rounded-2xl flex flex-col items-center justify-center font-extrabold text-2xl border-2 shrink-0">
+                        90%
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Đánh giá AI</span>
+                            <h3 id="verdictTitle" class="text-lg font-extrabold text-white">Bản dịch rất tự nhiên!</h3>
+                        </div>
+                        <p id="overallFeedbackText" class="text-sm text-slate-300 mt-1.5 leading-relaxed"></p>
+                    </div>
+                </div>
+
+                <!-- 2 cột: Điểm làm tốt & Góp ý sửa lỗi -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+                    <!-- Điểm làm tốt -->
+                    <div class="rounded-xl p-4 bg-emerald-950/30 border border-emerald-500/30">
+                        <div class="text-xs font-bold uppercase tracking-wider text-emerald-400 mb-2.5 flex items-center gap-1.5">
+                            <span>👍</span> Điểm bạn dịch tốt
+                        </div>
+                        <ul id="goodPointsList" class="space-y-2 text-sm text-slate-200 list-disc pl-4"></ul>
+                    </div>
+
+                    <!-- Góp ý cải thiện -->
+                    <div class="rounded-xl p-4 bg-amber-950/30 border border-amber-500/30">
+                        <div class="text-xs font-bold uppercase tracking-wider text-amber-400 mb-2.5 flex items-center gap-1.5">
+                            <span>🔧</span> Sửa lỗi từ vựng &amp; ngữ pháp
+                        </div>
+                        <div id="improvementsList" class="space-y-3 text-sm text-slate-200"></div>
+                    </div>
+                </div>
+
+                <!-- 2 Bản dịch mẫu tự nhiên -->
+                <div>
+                    <div class="text-xs font-bold uppercase tracking-wider text-indigo-300 mb-2.5 flex items-center gap-1.5">
+                        <span>✨</span> 2 Bản dịch mẫu tham khảo
+                    </div>
+                    <div id="sampleTranslationsList" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
+                </div>
+            </section>
+        </div>
+
+        <!-- CỘT PHẢI (4 CỘT): KHO TỪ VỰNG & LỊCH SỬ LUYỆN DỊCH -->
+        <aside class="lg:col-span-4">
+            <div class="card-surface rounded-2xl overflow-hidden flex flex-col lg:sticky lg:top-20 max-h-[680px]">
+                <!-- Tabs Header -->
+                <div class="grid grid-cols-2 bg-[#1e293b] border-b border-slate-800">
+                    <button 
+                        type="button" 
+                        id="tabBtnVocab" 
+                        onclick="switchSidebarTab('vocab')" 
+                        class="py-3.5 px-3 text-xs sm:text-sm font-bold border-b-2 border-indigo-500 text-indigo-400 bg-[#111827] flex items-center justify-center gap-1.5 transition"
+                    >
+                        <span>📚 Kho từ đã lưu</span>
+                        <span id="bankCountBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300">0</span>
+                    </button>
+                    <button 
+                        type="button" 
+                        id="tabBtnHistory" 
+                        onclick="switchSidebarTab('history')" 
+                        class="py-3.5 px-3 text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5 transition"
+                    >
+                        <span>🕒 Lịch sử dịch</span>
+                        <span id="historyCountBadge" class="text-[11px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400">0</span>
+                    </button>
+                </div>
+
+                <!-- TAB 1: KHO TỪ VỰNG -->
+                <div id="sidebarVocabContent" class="p-4 flex-1 overflow-y-auto flex flex-col gap-3">
+                    <div class="flex items-center gap-2">
+                        <input 
+                            type="text" 
+                            id="searchBankInput" 
+                            oninput="renderVocabBank()" 
+                            placeholder="🔍 Tìm từ hoặc nghĩa tiếng Việt..." 
+                            class="flex-1 inner-surface rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                        >
+                        <button 
+                            type="button" 
+                            onclick="pickRandomSavedWords()" 
+                            class="px-3 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold shrink-0 transition"
+                            title="Chọn ngẫu nhiên tối đa 3 từ trong kho để ôn tập"
+                        >
+                            🎲 Ôn ngẫu nhiên
+                        </button>
+                    </div>
+
+                    <p class="text-[11px] text-slate-400">
+                        Nhấn vào thẻ từ bên dưới để chọn hoặc bỏ chọn đưa vào câu luyện tập.
+                    </p>
+
+                    <div id="vocabBankList" class="space-y-2.5"></div>
+                </div>
+
+                <!-- TAB 2: LỊCH SỬ LUYỆN DỊCH -->
+                <div id="sidebarHistoryContent" class="hidden p-4 flex-1 overflow-y-auto flex flex-col gap-3">
+                    <div class="flex items-center justify-between">
+                        <span class="text-xs text-slate-400">Các câu bạn đã thực hành gần đây</span>
+                        <button type="button" onclick="clearHistoryData()" class="text-xs text-rose-400 hover:text-rose-300">Xóa lịch sử</button>
+                    </div>
+                    <div id="historyList" class="space-y-3"></div>
+                </div>
+            </div>
+        </aside>
+
+    </main>
+
+    <!-- KHUNG THÔNG BÁO TOAST (KHÔNG DÙNG ALERT) -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <script>
+        // ==========================================
+        // 1. CẤU HÌNH GEMINI API & TRẠNG THÁI ỨNG DỤNG
+        // ==========================================
+        const KEY_STORAGE = "vocabflow_gemini_key";
+        function getApiKey() {
+            try { return localStorage.getItem(KEY_STORAGE) || ""; } catch (e) { return ""; }
+        }
+        function askApiKey() {
+            const k = prompt("Dán Gemini API key của bạn (lấy miễn phí tại aistudio.google.com/apikey).\nKey chỉ lưu trong trình duyệt này.", getApiKey());
+            if (k && k.trim()) {
+                try { localStorage.setItem(KEY_STORAGE, k.trim()); } catch (e) {}
+                return k.trim();
+            }
+            return "";
+        }
+        const GEMINI_MODEL = "gemini-3-flash-preview";
+
+        const STORAGE_KEYS = {
+            VOCAB_BANK: "vocabflow_dark_bank_v3",
+            HISTORY: "vocabflow_dark_history_v3"
+        };
+
+        let appState = {
+            selectedWords: ["absorb"], // Khởi tạo sẵn 1 từ mẫu để người dùng có thể bấm thử ngay
+            practiceMode: "en-to-vi",
+            isGenerating: false,
+            isChecking: false,
+            currentChallenge: null,
+            vocabBank: [],
+            history: []
+        };
+
+        // ==========================================
+        // 2. KHỞI TẠO ỨNG DỤNG
+        // ==========================================
+        window.addEventListener("DOMContentLoaded", () => {
+            // Đảm bảo luôn luôn có class 'dark' trên thẻ html
+            document.documentElement.classList.add("dark");
+
+            loadStorageData();
+            setupInputListeners();
+            renderWordChips();
+            renderVocabBank();
+            renderHistoryList();
+            updateHeaderStats();
+        });
+
+        function loadStorageData() {
+            try {
+                const savedBank = localStorage.getItem(STORAGE_KEYS.VOCAB_BANK);
+                if (savedBank) appState.vocabBank = JSON.parse(savedBank);
+
+                const savedHistory = localStorage.getItem(STORAGE_KEYS.HISTORY);
+                if (savedHistory) appState.history = JSON.parse(savedHistory);
+            } catch (err) {
+                console.error("Không thể đọc dữ liệu LocalStorage:", err);
+            }
+        }
+
+        function saveStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEYS.VOCAB_BANK, JSON.stringify(appState.vocabBank));
+                localStorage.setItem(STORAGE_KEYS.HISTORY, JSON.stringify(appState.history.slice(0, 40)));
+            } catch (err) {
+                console.error("Không thể lưu LocalStorage:", err);
+            }
+            renderVocabBank();
+            renderHistoryList();
+            updateHeaderStats();
+        }
+
+        // ==========================================
+        // 3. XỬ LÝ NHẬP TỪ VỰNG (TAG CHIPS)
+        // ==========================================
+        function setupInputListeners() {
+            const input = document.getElementById("vocabInput");
+
+            input.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" || e.key === ",") {
+                    e.preventDefault();
+                    commitInput();
+                } else if (e.key === "Backspace" && input.value === "" && appState.selectedWords.length > 0) {
+                    appState.selectedWords.pop();
+                    renderWordChips();
+                }
+            });
+
+            input.addEventListener("blur", () => {
+                commitInput();
+            });
+
+            // Phím tắt Ctrl + Enter để nộp bài dịch
+            const transInput = document.getElementById("userTranslationInput");
+            transInput.addEventListener("keydown", (e) => {
+                if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+                    e.preventDefault();
+                    handleCheckTranslation();
+                }
+            });
+        }
+
+        function commitInput() {
+            const input = document.getElementById("vocabInput");
+            const rawVal = input.value;
+            if (!rawVal.trim()) return;
+
+            const parts = rawVal.split(/[,;\n]+/).map(w => w.trim()).filter(Boolean);
+            parts.forEach(word => {
+                const exists = appState.selectedWords.some(existing => existing.toLowerCase() === word.toLowerCase());
+                if (!exists) {
+                    appState.selectedWords.push(word);
+                }
+            });
+
+            input.value = "";
+            renderWordChips();
+        }
+
+        function loadPresetWords(wordsArray) {
+            appState.selectedWords = [...wordsArray];
+            renderWordChips();
+            showToast("Đã nạp bộ từ vựng gợi ý!");
+        }
+
+        function clearAllSelectedWords() {
+            appState.selectedWords = [];
+            renderWordChips();
+        }
+
+        function toggleWordSelection(word) {
+            const idx = appState.selectedWords.findIndex(w => w.toLowerCase() === word.toLowerCase());
+            if (idx > -1) {
+                appState.selectedWords.splice(idx, 1);
+            } else {
+                appState.selectedWords.push(word);
+            }
+            renderWordChips();
+        }
+
+        function removeSelectedWordAt(index) {
+            appState.selectedWords.splice(index, 1);
+            renderWordChips();
+        }
+
+        function renderWordChips() {
+            const chipsList = document.getElementById("chipsList");
+            const countBadge = document.getElementById("wordCountBadge");
+            const btnClear = document.getElementById("btnClearWords");
+
+            chipsList.innerHTML = appState.selectedWords.map((word, idx) => `
+                <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-500/20 border border-indigo-500/40 text-indigo-200 text-sm font-semibold">
+                    <span>${escapeHtml(word)}</span>
+                    <button 
+                        type="button" 
+                        onclick="removeSelectedWordAt(${idx}); event.stopPropagation();" 
+                        class="text-indigo-300 hover:text-rose-400 transition ml-0.5"
+                        title="Xóa từ này"
+                    >
+                        ✕
+                    </button>
+                </div>
+            `).join("");
+
+            countBadge.textContent = `${appState.selectedWords.length} từ đã chọn`;
+            if (appState.selectedWords.length > 0) {
+                btnClear.classList.remove("hidden");
+            } else {
+                btnClear.classList.add("hidden");
+            }
+
+            renderVocabBank();
+        }
+
+        function setPracticeMode(mode) {
+            appState.practiceMode = mode;
+            const btnEnVi = document.getElementById("modeEnToVi");
+            const btnViEn = document.getElementById("modeViToEn");
+            const desc = document.getElementById("modeDescriptionText");
+
+            if (mode === "en-to-vi") {
+                btnEnVi.className = "py-2 px-2 rounded-lg text-xs font-bold transition bg-indigo-600 text-white shadow";
+                btnViEn.className = "py-2 px-2 rounded-lg text-xs font-bold transition text-slate-400 hover:text-slate-200";
+                desc.innerHTML = `AI sẽ đặt 1 câu <strong class="text-indigo-400">Tiếng Anh</strong> chứa từ vựng của bạn để bạn tập dịch sang <strong class="text-emerald-400">Tiếng Việt</strong>.`;
+            } else {
+                btnViEn.className = "py-2 px-2 rounded-lg text-xs font-bold transition bg-indigo-600 text-white shadow";
+                btnEnVi.className = "py-2 px-2 rounded-lg text-xs font-bold transition text-slate-400 hover:text-slate-200";
+                desc.innerHTML = `AI sẽ đặt 1 câu <strong class="text-indigo-400">Tiếng Việt</strong> để bạn tập dịch sang <strong class="text-emerald-400">Tiếng Anh</strong> có sử dụng các từ mục tiêu.`;
+            }
+        }
+
+        // ==========================================
+        // 4. GỌI GEMINI API (CÓ EXPONENTIAL BACKOFF)
+        // ==========================================
+        async function callGeminiWithRetry(systemInstruction, userPrompt, responseSchema) {
+            let apiKey = getApiKey();
+            if (!apiKey) apiKey = askApiKey();
+            if (!apiKey) throw new Error("NO_KEY");
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+            const payload = {
+                contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+                systemInstruction: { parts: [{ text: systemInstruction }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: responseSchema
+                }
+            };
+
+            const delays = [1000, 2000, 4000, 8000];
+            for (let attempt = 0; attempt <= delays.length; attempt++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const e = new Error(`HTTP status ${response.status}`);
+                        e.status = response.status;
+                        if (response.status >= 400 && response.status < 500 && response.status !== 429) e.fatal = true;
+                        throw e;
+                    }
+
+                    const result = await response.json();
+                    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!text) throw new Error("Empty response from Gemini");
+                    return JSON.parse(text);
+                } catch (err) {
+                    if (err.fatal || attempt === delays.length) {
+                        throw err;
+                    }
+                    await new Promise(r => setTimeout(r, delays[attempt]));
+                }
+            }
+        }
+
+        // ==========================================
+        // 5. TẠO CÂU & HIỂN THỊ THẺ TỪ VỰNG RÕ NÉT (KHÔNG BLUR)
+        // ==========================================
+        async function handleGenerateSentence() {
+            commitInput();
+
+            if (appState.selectedWords.length === 0) {
+                showToast("Vui lòng nhập ít nhất 1 từ vựng để tạo câu!");
+                document.getElementById("vocabInput").focus();
+                return;
+            }
+
+            if (appState.isGenerating) return;
+            appState.isGenerating = true;
+
+            const btn = document.getElementById("btnGenerateSentence");
+            btn.disabled = true;
+            btn.innerHTML = `<span class="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> <span>Đang tạo câu...</span>`;
+
+            document.getElementById("emptyArenaState").classList.add("hidden");
+            document.getElementById("activeSentenceContent").classList.add("hidden");
+            document.getElementById("gradingResultSection").classList.add("hidden");
+            document.getElementById("loadingSentenceState").classList.remove("hidden");
+
+            const difficulty = document.getElementById("difficultySelect").value;
+            const topic = document.getElementById("topicSelect").value;
+
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    sourceSentence: { type: "STRING" },
+                    referenceEnglishSentence: { type: "STRING" },
+                    referenceVietnameseSentence: { type: "STRING" },
+                    wordCards: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                word: { type: "STRING" },
+                                usedForm: { type: "STRING" },
+                                pos: { type: "STRING" },
+                                ipa: { type: "STRING" },
+                                meaningVi: { type: "STRING" },
+                                collocation: { type: "STRING" }
+                            },
+                            propertyOrdering: ["word", "usedForm", "pos", "ipa", "meaningVi", "collocation"]
+                        }
+                    }
+                },
+                propertyOrdering: ["sourceSentence", "referenceEnglishSentence", "referenceVietnameseSentence", "wordCards"]
+            };
+
+            const systemPrompt = `Bạn là giáo viên dạy tiếng Anh và dịch thuật xuất sắc.
+Nhiệm vụ: Đặt 1 câu tự nhiên, giàu ngữ cảnh và dễ nhớ có chứa TẤT CẢ các từ vựng mục tiêu của học viên.
+- Nếu chế độ là 'en-to-vi': 'sourceSentence' phải là câu Tiếng Anh (trùng với referenceEnglishSentence).
+- Nếu chế độ là 'vi-to-en': 'sourceSentence' phải là câu Tiếng Việt tự nhiên (trùng với referenceVietnameseSentence) sao cho khi dịch sang tiếng Anh sẽ dùng đúng các từ mục tiêu trong 'referenceEnglishSentence'.
+- Trong 'wordCards':
+  + 'word': Từ gốc tiếng Anh.
+  + 'usedForm': Dạng từ thực tế xuất hiện trong câu tiếng Anh.
+  + 'pos': Từ loại (noun, verb, adj, adv, phrase...).
+  + 'ipa': Phiên âm quốc tế chuẩn (ví dụ: /əbˈzɔːrb/).
+  + 'meaningVi': Nghĩa tiếng Việt rõ ràng, sát ngữ cảnh trong câu.
+  + 'collocation': 1 cụm từ đi kèm phổ biến chứa từ đó kèm nghĩa ngắn gọn (ví dụ: "absorb information (tiếp thu thông tin)").`;
+
+            const userPrompt = `Chế độ dịch: ${appState.practiceMode}
+Các từ mục tiêu: ${appState.selectedWords.join(", ")}
+Độ khó CEFR: ${difficulty}
+Chủ đề ngữ cảnh: ${topic}`;
+
+            try {
+                const data = await callGeminiWithRetry(systemPrompt, userPrompt, schema);
+                appState.currentChallenge = {
+                    ...data,
+                    words: [...appState.selectedWords],
+                    mode: appState.practiceMode,
+                    difficulty,
+                    topic
+                };
+
+                // Lưu hoặc cập nhật từ vựng vào Kho từ
+                if (Array.isArray(data.wordCards)) {
+                    data.wordCards.forEach(card => {
+                        const existing = appState.vocabBank.find(item => item.word.toLowerCase() === card.word.toLowerCase());
+                        if (existing) {
+                            existing.count = (existing.count || 1) + 1;
+                            existing.meaningVi = card.meaningVi || existing.meaningVi;
+                            existing.pos = card.pos || existing.pos;
+                            existing.ipa = card.ipa || existing.ipa;
+                            existing.collocation = card.collocation || existing.collocation;
+                        } else {
+                            appState.vocabBank.unshift({
+                                word: card.word,
+                                pos: card.pos,
+                                ipa: card.ipa,
+                                meaningVi: card.meaningVi,
+                                collocation: card.collocation,
+                                count: 1
+                            });
+                        }
+                    });
+                    saveStorage();
+                }
+
+                renderPracticeArena();
+            } catch (error) {
+                console.error("Lỗi tạo câu:", error);
+                if (err_isKeyProblem(error)) {
+                    showToast("API key thiếu hoặc không hợp lệ. Bấm nút 🔑 API Key ở trên để nhập lại.");
+                } else {
+                    showToast("Không thể kết nối AI lúc này, vui lòng thử lại!");
+                }
+                document.getElementById("loadingSentenceState").classList.add("hidden");
+                document.getElementById("emptyArenaState").classList.remove("hidden");
+            } finally {
+                appState.isGenerating = false;
+                btn.disabled = false;
+                btn.innerHTML = `<span>✨ Tạo câu luyện dịch</span>`;
+            }
+        }
+
+        function renderPracticeArena() {
+            const ch = appState.currentChallenge;
+            if (!ch) return;
+
+            document.getElementById("loadingSentenceState").classList.add("hidden");
+            document.getElementById("activeSentenceContent").classList.remove("hidden");
+
+            const srcDisplay = document.getElementById("sourceSentenceDisplay");
+            const srcLabel = document.getElementById("sourceLangLabel");
+            const inputLabel = document.getElementById("translationInputLabel");
+            const reminderBox = document.getElementById("viToEnTargetReminder");
+            const reminderPills = document.getElementById("viToEnTargetPills");
+
+            if (ch.mode === "en-to-vi") {
+                srcLabel.textContent = "🇬🇧 Câu Tiếng Anh cần dịch sang Tiếng Việt:";
+                inputLabel.textContent = "🇻🇳 Nhập bản dịch Tiếng Việt của bạn:";
+                reminderBox.classList.add("hidden");
+
+                // Highlight các từ vựng mục tiêu trong câu tiếng Anh
+                let highlighted = escapeHtml(ch.sourceSentence);
+                const formsToHighlight = (ch.wordCards || [])
+                    .flatMap(c => [c.usedForm, c.word])
+                    .filter(Boolean)
+                    .sort((a, b) => b.length - a.length);
+
+                const uniqueForms = [...new Set(formsToHighlight)];
+                uniqueForms.forEach(form => {
+                    const escapedRegex = form.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp(`\\b(${escapedRegex})\\b`, "gi");
+                    highlighted = highlighted.replace(regex, `<span class="word-highlight">$1</span>`);
+                });
+                srcDisplay.innerHTML = highlighted;
+            } else {
+                srcLabel.textContent = "🇻🇳 Câu Tiếng Việt cần dịch sang Tiếng Anh:";
+                inputLabel.textContent = "🇬🇧 Nhập bản dịch Tiếng Anh của bạn:";
+                srcDisplay.textContent = ch.sourceSentence;
+
+                reminderBox.classList.remove("hidden");
+                reminderPills.innerHTML = (ch.wordCards || []).map(c => `
+                    <span class="px-2.5 py-1 rounded-lg bg-indigo-500/20 border border-indigo-500/40 text-indigo-200 font-mono text-xs font-semibold">
+                        ${escapeHtml(c.word)}
+                    </span>
+                `).join("");
+            }
+
+            // Xóa nội dung ô dịch cũ và focus
+            const transInput = document.getElementById("userTranslationInput");
+            transInput.value = "";
+            transInput.focus();
+
+            // Render Thẻ Từ Vựng (FLASHCARDS): Luôn hiển thị rõ nét 100% nghĩa tiếng Việt và collocation, tuyệt đối không làm mờ
+            const cardsGrid = document.getElementById("wordCardsGrid");
+            cardsGrid.innerHTML = (ch.wordCards || []).map(card => `
+                <div class="inner-surface rounded-xl p-4 flex flex-col justify-between gap-3 hover:border-indigo-500/50 transition">
+                    <div class="flex items-start justify-between gap-2">
+                        <div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="text-base sm:text-lg font-extrabold text-indigo-400">${escapeHtml(card.word)}</span>
+                                <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">${escapeHtml(card.pos || 'vocab')}</span>
+                                <span class="text-xs font-mono text-slate-400">${escapeHtml(card.ipa || '')}</span>
+                            </div>
+                        </div>
+                        <button 
+                            type="button" 
+                            onclick="speakText('${escapeJs(card.word)}')" 
+                            class="w-9 h-9 rounded-lg bg-slate-800 hover:bg-indigo-600 text-slate-200 hover:text-white border border-slate-700 flex items-center justify-center shrink-0 transition"
+                            title="Nghe phát âm từ ${escapeHtml(card.word)}"
+                        >
+                            🔊
+                        </button>
+                    </div>
+
+                    <!-- Nghĩa tiếng Việt & Collocation hiển thị rõ ràng ngay lập tức -->
+                    <div class="space-y-1.5 pt-2 border-t border-slate-700/70">
+                        <div class="text-sm text-slate-100 leading-snug">
+                            <span class="font-bold text-emerald-400">Nghĩa:</span> 
+                            <span class="font-medium">${escapeHtml(card.meaningVi || '')}</span>
+                        </div>
+                        ${card.collocation ? `
+                        <div class="text-xs text-amber-300/95 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-1.5 font-medium">
+                            📌 Cụm từ: <span class="text-slate-100">${escapeHtml(card.collocation)}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join("");
+        }
+
+        // ==========================================
+        // 6. CHẤM ĐIỂM BẢN DỊCH CHI TIẾT BẰNG GEMINI API
+        // ==========================================
+        async function handleCheckTranslation() {
+            if (!appState.currentChallenge || appState.isChecking) return;
+
+            const userTranslation = document.getElementById("userTranslationInput").value.trim();
+            if (!userTranslation) {
+                showToast("Bạn hãy nhập bản dịch của mình trước khi chấm điểm nhé!");
+                document.getElementById("userTranslationInput").focus();
+                return;
+            }
+
+            appState.isChecking = true;
+            const btn = document.getElementById("btnCheckAnswer");
+            btn.disabled = true;
+            btn.innerHTML = `<span class="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> <span>AI đang chấm bài...</span>`;
+
+            const ch = appState.currentChallenge;
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    score: { type: "INTEGER" },
+                    verdict: { type: "STRING" },
+                    overallFeedback: { type: "STRING" },
+                    goodPoints: {
+                        type: "ARRAY",
+                        items: { type: "STRING" }
+                    },
+                    improvements: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                issue: { type: "STRING" },
+                                suggestion: { type: "STRING" },
+                                explanation: { type: "STRING" }
+                            },
+                            propertyOrdering: ["issue", "suggestion", "explanation"]
+                        }
+                    },
+                    sampleTranslations: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                style: { type: "STRING" },
+                                text: { type: "STRING" }
+                            },
+                            propertyOrdering: ["style", "text"]
+                        }
+                    }
+                },
+                propertyOrdering: ["score", "verdict", "overallFeedback", "goodPoints", "improvements", "sampleTranslations"]
+            };
+
+            const systemPrompt = `Bạn là chuyên gia chấm dịch thuật Anh-Việt / Việt-Anh tận tâm.
+Hãy chấm điểm bản dịch của người học trên thang điểm 0 - 100%.
+- Đánh giá độ chính xác về ý nghĩa, cách dùng các từ mục tiêu (${ch.words.join(", ")}) và độ tự nhiên của ngữ pháp.
+- Nhận xét bằng tiếng Việt rõ ràng, khích lệ và cụ thể.
+- Cung cấp đúng 2 bản dịch mẫu tự nhiên trong 'sampleTranslations' (1 bản sát nghĩa tự nhiên, 1 bản diễn đạt nâng cao/mượt mà).`;
+
+            const userPrompt = `Chiều dịch: ${ch.mode === 'en-to-vi' ? 'Anh sang Việt' : 'Việt sang Anh'}
+Câu gốc: "${ch.sourceSentence}"
+Câu Tiếng Anh tham chiếu: "${ch.referenceEnglishSentence}"
+Câu Tiếng Việt tham chiếu: "${ch.referenceVietnameseSentence}"
+Các từ vựng mục tiêu: ${ch.words.join(", ")}
+Bản dịch của học viên: "${userTranslation}"`;
+
+            try {
+                const res = await callGeminiWithRetry(systemPrompt, userPrompt, schema);
+                renderGradingResult(res, userTranslation);
+            } catch (error) {
+                console.error("Lỗi chấm điểm:", error);
+                showToast("Có lỗi khi chấm điểm, vui lòng thử lại!");
+            } finally {
+                appState.isChecking = false;
+                btn.disabled = false;
+                btn.innerHTML = `<span>✅ Chấm điểm &amp; Sửa bản dịch</span>`;
+            }
+        }
+
+        function renderGradingResult(res, userTranslation) {
+            const ch = appState.currentChallenge;
+            const section = document.getElementById("gradingResultSection");
+            section.classList.remove("hidden");
+
+            const scoreBadge = document.getElementById("scoreCircleBadge");
+            const score = typeof res.score === "number" ? res.score : 80;
+            scoreBadge.textContent = `${score}%`;
+
+            if (score >= 85) {
+                scoreBadge.className = "w-20 h-20 rounded-2xl flex flex-col items-center justify-center font-extrabold text-2xl border-2 shrink-0 bg-emerald-500/15 text-emerald-400 border-emerald-500/40";
+            } else if (score >= 65) {
+                scoreBadge.className = "w-20 h-20 rounded-2xl flex flex-col items-center justify-center font-extrabold text-2xl border-2 shrink-0 bg-amber-500/15 text-amber-400 border-amber-500/40";
+            } else {
+                scoreBadge.className = "w-20 h-20 rounded-2xl flex flex-col items-center justify-center font-extrabold text-2xl border-2 shrink-0 bg-rose-500/15 text-rose-400 border-rose-500/40";
+            }
+
+            document.getElementById("verdictTitle").textContent = res.verdict || "Kết quả đánh giá";
+            document.getElementById("overallFeedbackText").textContent = res.overallFeedback || "";
+
+            // Điểm làm tốt
+            const goodList = document.getElementById("goodPointsList");
+            if (Array.isArray(res.goodPoints) && res.goodPoints.length > 0) {
+                goodList.innerHTML = res.goodPoints.map(pt => `<li>${escapeHtml(pt)}</li>`).join("");
+            } else {
+                goodList.innerHTML = `<li>Bạn đã cố gắng hoàn thành câu dịch đúng trọng tâm.</li>`;
+            }
+
+            // Góp ý sửa lỗi
+            const impList = document.getElementById("improvementsList");
+            if (Array.isArray(res.improvements) && res.improvements.length > 0) {
+                impList.innerHTML = res.improvements.map(item => `
+                    <div class="p-2.5 rounded-lg bg-[#111827]/80 border border-slate-800">
+                        <div class="flex flex-wrap items-center gap-1.5 text-xs sm:text-sm">
+                            <span class="line-through text-rose-400">${escapeHtml(item.issue || '')}</span>
+                            <span class="text-slate-500">&rarr;</span>
+                            <span class="font-bold text-emerald-400">${escapeHtml(item.suggestion || '')}</span>
+                        </div>
+                        <p class="text-xs text-slate-300 mt-1">${escapeHtml(item.explanation || '')}</p>
+                    </div>
+                `).join("");
+            } else {
+                impList.innerHTML = `<div class="text-xs text-emerald-300">🎉 Bản dịch hoàn hảo, không có lỗi ngữ pháp hay từ vựng nào cần chỉnh sửa!</div>`;
+            }
+
+            // 2 Bản dịch mẫu
+            const samplesList = document.getElementById("sampleTranslationsList");
+            samplesList.innerHTML = (res.sampleTranslations || []).map(sample => `
+                <div class="inner-surface rounded-xl p-3.5 flex flex-col justify-between gap-2">
+                    <div>
+                        <span class="text-[11px] font-bold uppercase tracking-wider text-indigo-300 block mb-1">
+                            ${escapeHtml(sample.style || 'Bản dịch mẫu')}
+                        </span>
+                        <p class="text-sm text-white font-medium leading-relaxed">${escapeHtml(sample.text || '')}</p>
+                    </div>
+                    <div class="flex justify-end gap-2 pt-2 border-t border-slate-700/60">
+                        <button 
+                            type="button" 
+                            onclick="copyTextToClipboard('${escapeJs(sample.text || '')}')" 
+                            class="text-xs px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition"
+                        >
+                            📋 Sao chép
+                        </button>
+                    </div>
+                </div>
+            `).join("");
+
+            // Lưu vào lịch sử
+            appState.history.unshift({
+                id: Date.now(),
+                sourceSentence: ch.sourceSentence,
+                userTranslation,
+                score,
+                words: [...ch.words],
+                mode: ch.mode,
+                timestamp: new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })
+            });
+            saveStorage();
+
+            section.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+
+        // ==========================================
+        // 7. QUẢN LÝ KHO TỪ VỰNG & LỊCH SỬ (SIDEBAR)
+        // ==========================================
+        function switchSidebarTab(tab) {
+            const btnVocab = document.getElementById("tabBtnVocab");
+            const btnHist = document.getElementById("tabBtnHistory");
+            const contentVocab = document.getElementById("sidebarVocabContent");
+            const contentHist = document.getElementById("sidebarHistoryContent");
+
+            if (tab === "vocab") {
+                btnVocab.className = "py-3.5 px-3 text-xs sm:text-sm font-bold border-b-2 border-indigo-500 text-indigo-400 bg-[#111827] flex items-center justify-center gap-1.5 transition";
+                btnHist.className = "py-3.5 px-3 text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5 transition";
+                contentVocab.classList.remove("hidden");
+                contentHist.classList.add("hidden");
+            } else {
+                btnHist.className = "py-3.5 px-3 text-xs sm:text-sm font-bold border-b-2 border-indigo-500 text-indigo-400 bg-[#111827] flex items-center justify-center gap-1.5 transition";
+                btnVocab.className = "py-3.5 px-3 text-xs sm:text-sm font-bold border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5 transition";
+                contentHist.classList.remove("hidden");
+                contentVocab.classList.add("hidden");
+            }
+        }
+
+        function renderVocabBank() {
+            const listEl = document.getElementById("vocabBankList");
+            const query = (document.getElementById("searchBankInput")?.value || "").trim().toLowerCase();
+
+            document.getElementById("bankCountBadge").textContent = appState.vocabBank.length;
+
+            const filtered = appState.vocabBank.filter(item =>
+                item.word.toLowerCase().includes(query) ||
+                (item.meaningVi || "").toLowerCase().includes(query)
+            );
+
+            if (filtered.length === 0) {
+                listEl.innerHTML = `
+                    <div class="text-center py-8 px-3 rounded-xl bg-[#1e293b]/50 border border-dashed border-slate-800 text-xs text-slate-400">
+                        Chưa có từ vựng nào khớp tìm kiếm. Khi bạn tạo câu AI, từ vựng kèm nghĩa sẽ tự động lưu vào đây!
+                    </div>
+                `;
+                return;
+            }
+
+            listEl.innerHTML = filtered.map(item => {
+                const isSelected = appState.selectedWords.some(w => w.toLowerCase() === item.word.toLowerCase());
+                return `
+                    <div 
+                        onclick="toggleWordSelection('${escapeJs(item.word)}')" 
+                        class="p-3 rounded-xl border transition cursor-pointer flex items-start justify-between gap-2 ${
+                            isSelected 
+                                ? 'bg-indigo-950/60 border-indigo-500/70' 
+                                : 'bg-[#1e293b] border-slate-800 hover:border-slate-600'
+                        }"
+                    >
+                        <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                                <span class="font-bold text-sm text-white">${escapeHtml(item.word)}</span>
+                                ${item.pos ? `<span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">${escapeHtml(item.pos)}</span>` : ''}
+                                ${item.ipa ? `<span class="text-[11px] font-mono text-slate-400">${escapeHtml(item.ipa)}</span>` : ''}
+                            </div>
+                            <p class="text-xs text-emerald-300 mt-1 leading-snug">${escapeHtml(item.meaningVi || '')}</p>
+                            ${item.collocation ? `<p class="text-[11px] text-slate-400 mt-0.5 truncate">📌 ${escapeHtml(item.collocation)}</p>` : ''}
+                        </div>
+                        <div class="flex flex-col items-end gap-1.5 shrink-0">
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+                                ${item.count || 1}x
+                            </span>
+                            <div class="flex items-center gap-1">
+                                <button 
+                                    type="button" 
+                                    onclick="speakText('${escapeJs(item.word)}'); event.stopPropagation();" 
+                                    class="w-6 h-6 rounded bg-slate-800 hover:bg-indigo-600 text-xs flex items-center justify-center"
+                                    title="Nghe phát âm"
+                                >
+                                    🔊
+                                </button>
+                                <button 
+                                    type="button" 
+                                    onclick="deleteWordFromBank('${escapeJs(item.word)}'); event.stopPropagation();" 
+                                    class="w-6 h-6 rounded bg-slate-800 hover:bg-rose-600 text-slate-400 hover:text-white text-xs flex items-center justify-center"
+                                    title="Xóa khỏi kho"
+                                >
+                                    🗑️
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+        }
+
+        function deleteWordFromBank(word) {
+            appState.vocabBank = appState.vocabBank.filter(item => item.word.toLowerCase() !== word.toLowerCase());
+            saveStorage();
+            showToast(`Đã xóa "${word}" khỏi kho từ vựng.`);
+        }
+
+        function pickRandomSavedWords() {
+            if (appState.vocabBank.length === 0) {
+                showToast("Kho từ vựng đang trống, hãy tạo câu trước nhé!");
+                return;
+            }
+            const shuffled = [...appState.vocabBank].sort(() => 0.5 - Math.random());
+            appState.selectedWords = shuffled.slice(0, Math.min(3, shuffled.length)).map(i => i.word);
+            renderWordChips();
+            showToast(`Đã chọn ngẫu nhiên ${appState.selectedWords.length} từ để ôn tập!`);
+        }
+
+        function renderHistoryList() {
+            const listEl = document.getElementById("historyList");
+            document.getElementById("historyCountBadge").textContent = appState.history.length;
+
+            if (appState.history.length === 0) {
+                listEl.innerHTML = `
+                    <div class="text-center py-8 px-3 rounded-xl bg-[#1e293b]/50 border border-dashed border-slate-800 text-xs text-slate-400">
+                        Chưa có lịch sử luyện dịch nào.
+                    </div>
+                `;
+                return;
+            }
+
+            listEl.innerHTML = appState.history.map(item => `
+                <div class="p-3 rounded-xl bg-[#1e293b] border border-slate-800 space-y-2">
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="flex flex-wrap gap-1">
+                            ${(item.words || []).map(w => `
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                    ${escapeHtml(w)}
+                                </span>
+                            `).join("")}
+                        </div>
+                        <span class="text-xs font-extrabold ${item.score >= 80 ? 'text-emerald-400' : item.score >= 60 ? 'text-amber-400' : 'text-rose-400'}">
+                            ${item.score}%
+                        </span>
+                    </div>
+                    <p class="text-xs font-semibold text-slate-100 leading-snug">${escapeHtml(item.sourceSentence)}</p>
+                    <p class="text-xs text-slate-400 italic leading-snug">"${escapeHtml(item.userTranslation)}"</p>
+                </div>
+            `).join("");
+        }
+
+        function clearHistoryData() {
+            appState.history = [];
+            saveStorage();
+            showToast("Đã xóa lịch sử luyện dịch.");
+        }
+
+        function updateHeaderStats() {
+            const total = appState.history.length;
+            document.getElementById("statTotalSentences").textContent = total;
+            document.getElementById("statVocabCount").textContent = appState.vocabBank.length;
+
+            if (total > 0) {
+                const sum = appState.history.reduce((acc, cur) => acc + (cur.score || 0), 0);
+                document.getElementById("statAvgScore").textContent = `${Math.round(sum / total)}%`;
+            } else {
+                document.getElementById("statAvgScore").textContent = "--";
+            }
+        }
+
+        // ==========================================
+        // 8. PHÁT ÂM WEB SPEECH API & TIỆN ÍCH
+        // ==========================================
+        function speakCurrentEnglishSentence() {
+            if (!appState.currentChallenge) return;
+            const sentence = appState.currentChallenge.referenceEnglishSentence || appState.currentChallenge.sourceSentence;
+            speakText(sentence);
+        }
+
+        function speakText(text) {
+            if (!("speechSynthesis" in window)) {
+                showToast("Trình duyệt của bạn không hỗ trợ phát âm.");
+                return;
+            }
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = "en-US";
+            utterance.rate = 0.95;
+            window.speechSynthesis.speak(utterance);
+        }
+
+        function copyTextToClipboard(text) {
+            const temp = document.createElement("textarea");
+            temp.value = text;
+            document.body.appendChild(temp);
+            temp.select();
+            document.execCommand("copy");
+            document.body.removeChild(temp);
+            showToast("Đã sao chép bản dịch mẫu!");
+        }
+
+        function err_isKeyProblem(e) {
+            return e && (e.message === "NO_KEY" || e.status === 400 || e.status === 401 || e.status === 403);
+        }
+        function showToast(message) {
+            const container = document.getElementById("toastContainer");
+            const toast = document.createElement("div");
+            toast.className = "px-4 py-2.5 rounded-xl bg-indigo-950 border border-indigo-500/50 text-white text-xs sm:text-sm font-semibold shadow-xl flex items-center gap-2 transition-all duration-300";
+            toast.innerHTML = `<span>✨</span> <span>${escapeHtml(message)}</span>`;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = "0";
+                toast.style.transform = "translateY(8px)";
+                setTimeout(() => toast.remove(), 300);
+            }, 2600);
+        }
+
+        function escapeHtml(str) {
+            if (typeof str !== "string") return "";
+            return str
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        function escapeJs(str) {
+            if (typeof str !== "string") return "";
+            return str
+                .replace(/\\/g, "\\\\")
+                .replace(/'/g, "\\'")
+                .replace(/"/g, '\\"')
+                .replace(/\n/g, " ");
+        }
+    </script>
+</body>
+</html>
