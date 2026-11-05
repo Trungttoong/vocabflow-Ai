@@ -168,14 +168,15 @@
                     <button
                         type="button"
                         id="btnLookup"
-                        onclick="handleLookupWords(); event.stopPropagation();"
+                        onclick="handleLookupClick(); event.stopPropagation();"
+                        style="touch-action: manipulation"
                         class="ml-auto shrink-0 w-9 h-9 rounded-lg bg-sky-500/20 hover:bg-sky-500/35 text-sky-200 border border-sky-500/40 flex items-center justify-center text-base transition disabled:opacity-50"
-                        title="Tra nghĩa các từ đã nhập (không tạo câu luyện dịch)"
+                        title="Bấm 1 lần: tra nghĩa từng từ • Nhấn đúp: dịch cả câu"
                     >🔍</button>
                 </div>
 
                 <div class="flex items-center justify-between mt-2 text-xs text-slate-400">
-                    <span>💡 Nhập 1 từ (vd: <code class="text-indigo-300 font-mono">absorb</code>) hoặc nhiều từ để AI ghép vào 1 câu. Bấm <span class="text-sky-300">🔍</span> để chỉ tra từ.</span>
+                    <span>💡 Nhập 1 từ (vd: <code class="text-indigo-300 font-mono">absorb</code>) hoặc nhiều từ để AI ghép vào 1 câu. Bấm <span class="text-sky-300">🔍</span> để tra từ, nhấn đúp 🔍 để dịch cả câu.</span>
                     <div class="flex items-center gap-3">
                         <span id="wordCountBadge" class="font-semibold text-indigo-400">0 từ đã chọn</span>
                         <button type="button" id="btnClearWords" onclick="clearAllSelectedWords()" class="hidden text-rose-400 hover:text-rose-300 underline">Xóa hết</button>
@@ -280,15 +281,15 @@
             <section id="lookupSection" class="hidden card-surface rounded-2xl p-5 sm:p-6 border-t-4 border-t-sky-500">
                 <div class="flex items-center justify-between gap-2 mb-4">
                     <div class="flex items-center gap-2.5">
-                        <span class="w-7 h-7 rounded-lg bg-sky-500/20 border border-sky-500/40 text-sky-300 text-sm flex items-center justify-center">🔍</span>
-                        <h2 class="text-base sm:text-lg font-bold text-white">Kết quả tra từ</h2>
+                        <span id="lookupIcon" class="w-7 h-7 rounded-lg bg-sky-500/20 border border-sky-500/40 text-sky-300 text-sm flex items-center justify-center">🔍</span>
+                        <h2 id="lookupTitle" class="text-base sm:text-lg font-bold text-white">Kết quả tra từ</h2>
                         <span id="lookupSavedNote" class="hidden text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Đã lưu vào Kho từ</span>
                     </div>
                     <button type="button" onclick="closeLookup()" class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-[#1e293b] hover:bg-slate-700 text-slate-300 border border-slate-700 transition">✕ Đóng</button>
                 </div>
                 <div id="lookupLoading" class="hidden py-8 text-center">
                     <div class="inline-block w-8 h-8 border-4 border-sky-500/30 border-t-sky-400 rounded-full animate-spin mb-2"></div>
-                    <p class="text-sm text-slate-300">Đang tra từ...</p>
+                    <p id="lookupLoadingText" class="text-sm text-slate-300">Đang tra từ...</p>
                 </div>
                 <div id="lookupCardsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3.5"></div>
             </section>
@@ -1583,6 +1584,10 @@ Bản dịch của học viên: "${userTranslation}"`;
             const loading = document.getElementById("lookupLoading");
             const grid = document.getElementById("lookupCardsGrid");
             const savedNote = document.getElementById("lookupSavedNote");
+            document.getElementById("lookupTitle").textContent = "Kết quả tra từ";
+            document.getElementById("lookupIcon").textContent = "🔍";
+            document.getElementById("lookupLoadingText").textContent = "Đang tra từ...";
+            grid.className = "grid grid-cols-1 sm:grid-cols-2 gap-3.5";
             section.classList.remove("hidden");
             loading.classList.remove("hidden");
             grid.innerHTML = "";
@@ -1657,6 +1662,111 @@ Với MỖI từ/cụm từ người dùng nhập, trả về đúng 1 thẻ t�
                     showToast("API key thiếu hoặc không hợp lệ. Bấm nút 🔑 API Key ở trên để nhập lại.");
                 } else {
                     showToast("Không tra được từ lúc này, vui lòng thử lại!");
+                }
+                section.classList.add("hidden");
+            } finally {
+                loading.classList.add("hidden");
+                appState.isLookingUp = false;
+                btn.disabled = false;
+                btn.innerHTML = "🔍";
+            }
+        }
+
+        // ==========================================
+        // 7c-2. NHẤN ĐÚP KÍNH LÚP = DỊCH CẢ CÂU
+        // ==========================================
+        let lookupClickTimer = null;
+        function handleLookupClick() {
+            if (lookupClickTimer) {
+                clearTimeout(lookupClickTimer);
+                lookupClickTimer = null;
+                handleTranslateSentence();
+                return;
+            }
+            lookupClickTimer = setTimeout(() => {
+                lookupClickTimer = null;
+                handleLookupWords();
+            }, 260);
+        }
+
+        let lastTranslationEn = "";
+        function speakLastTranslation() {
+            if (lastTranslationEn) speakText(lastTranslationEn);
+        }
+
+        async function handleTranslateSentence() {
+            const input = document.getElementById("vocabInput");
+            // Ưu tiên đoạn đang gõ (giữ nguyên dấu phẩy); nếu trống thì ghép các từ đã thêm
+            let text = (input.value || "").trim();
+            if (!text) text = appState.selectedWords.join(", ").trim();
+            if (!text) {
+                showToast("Hãy nhập câu cần dịch rồi nhấn đúp 🔍!");
+                input.focus();
+                return;
+            }
+            if (text.length > 2000) text = text.slice(0, 2000);
+            if (appState.isLookingUp) return;
+            appState.isLookingUp = true;
+
+            const btn = document.getElementById("btnLookup");
+            btn.disabled = true;
+            btn.innerHTML = `<span class="inline-block w-4 h-4 border-2 border-sky-200/30 border-t-sky-200 rounded-full animate-spin"></span>`;
+
+            const section = document.getElementById("lookupSection");
+            const loading = document.getElementById("lookupLoading");
+            const grid = document.getElementById("lookupCardsGrid");
+            document.getElementById("lookupTitle").textContent = "Dịch cả câu";
+            document.getElementById("lookupIcon").textContent = "🌐";
+            document.getElementById("lookupLoadingText").textContent = "Đang dịch...";
+            document.getElementById("lookupSavedNote").classList.add("hidden");
+            grid.className = "grid grid-cols-1 gap-3.5";
+            section.classList.remove("hidden");
+            loading.classList.remove("hidden");
+            grid.innerHTML = "";
+            section.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    sourceLang: { type: "STRING" },
+                    translation: { type: "STRING" }
+                },
+                propertyOrdering: ["sourceLang", "translation"]
+            };
+
+            const systemPrompt = `Bạn là dịch giả Anh-Việt chuyên nghiệp.
+Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, đúng ngữ cảnh, giữ nguyên ý nghĩa và sắc thái.
+- Nếu văn bản là tiếng Anh: dịch sang tiếng Việt, đặt sourceLang = "en".
+- Nếu văn bản là tiếng Việt: dịch sang tiếng Anh, đặt sourceLang = "vi".
+- Nếu là tiếng khác, dịch sang tiếng Việt và đặt sourceLang = "en".
+- Chỉ trả về bản dịch trong 'translation', không giải thích, không thêm ghi chú.`;
+
+            try {
+                const data = await callGeminiWithRetry(systemPrompt, text, schema);
+                const translation = (data && data.translation || "").trim();
+                if (!translation) throw new Error("EMPTY_TRANSLATION");
+                const srcIsVi = data.sourceLang === "vi";
+
+                lastTranslationEn = srcIsVi ? translation : text;
+
+                grid.innerHTML = `
+                    <div class="rounded-xl bg-[#1e293b] border border-slate-700 p-4">
+                        <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">${srcIsVi ? "🇻🇳 Tiếng Việt" : "🇬🇧 Tiếng Anh"}</div>
+                        <p class="text-base text-white leading-relaxed whitespace-pre-wrap">${escapeHtml(text)}</p>
+                    </div>
+                    <div class="rounded-xl bg-emerald-500/10 border border-emerald-500/30 p-4">
+                        <div class="flex items-center justify-between gap-2 mb-1.5">
+                            <span class="text-[11px] font-bold uppercase tracking-wider text-emerald-300">${srcIsVi ? "🇬🇧 Tiếng Anh" : "🇻🇳 Tiếng Việt"}</span>
+                            <button type="button" onclick="speakLastTranslation()" class="text-[11px] font-semibold px-2 py-1 rounded-md bg-[#0f172a] hover:bg-slate-700 text-slate-200 border border-slate-700 transition" title="Nghe bản tiếng Anh">🔊 Nghe tiếng Anh</button>
+                        </div>
+                        <p class="text-base text-emerald-100 leading-relaxed whitespace-pre-wrap">${escapeHtml(translation)}</p>
+                    </div>`;
+            } catch (error) {
+                console.error("Lỗi dịch câu:", error);
+                if (err_isKeyProblem(error)) {
+                    showToast("API key thiếu hoặc không hợp lệ. Bấm nút 🔑 API Key ở trên để nhập lại.");
+                } else {
+                    showToast("Không dịch được lúc này, vui lòng thử lại!");
                 }
                 section.classList.add("hidden");
             } finally {
