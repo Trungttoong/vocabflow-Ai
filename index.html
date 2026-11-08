@@ -76,6 +76,7 @@
             border: 1px solid #334155;
         }
     </style>
+    <style>.illus-active{outline:1px dashed rgba(56,189,248,.6);outline-offset:4px;border-radius:8px}.illus:focus{outline:none}</style>
 </head>
 <body class="min-h-screen bg-[#0b0f19] text-slate-100 flex flex-col selection:bg-indigo-500 selection:text-white">
 
@@ -97,6 +98,7 @@
                         </span>
                         <button type="button" onclick="askApiKey()" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25">🔑 API Key</button>
                         <button type="button" onclick="openExportModal()" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25">📤 Xuất Google Sheets</button>
+                        <button type="button" onclick="openAnkiModal()" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 hover:bg-sky-500/25">🗂️ Xuất Anki</button>
                     </div>
                     <p class="text-xs text-slate-400">Nhập từ vựng &rarr; Tạo câu ngữ cảnh &rarr; Tập dịch &amp; Nhớ từ sâu</p>
                 </div>
@@ -162,7 +164,7 @@
                         type="text" 
                         id="vocabInput" 
                         class="flex-1 min-w-[180px] bg-transparent text-slate-100 placeholder-slate-500 text-sm sm:text-base focus:outline-none py-1" 
-                        placeholder="Nhập 1 hoặc nhiều từ/cụm từ (nhấn Enter hoặc dấu phẩy để thêm)..." 
+                        placeholder="Nhập từ/cụm từ rồi nhấn Enter để tra (dấu phẩy để thêm từ khác)..." 
                         autocomplete="off"
                     >
                     <button
@@ -609,6 +611,92 @@
         </div>
     </div>
 
+    <!-- MODAL XUẤT ANKI -->
+    <div id="ankiModal" class="hidden fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onclick="if(event.target===this) closeAnkiModal()">
+        <div class="w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-[#0f172a] border border-sky-500/40 shadow-2xl p-5 space-y-4">
+            <div class="flex items-center justify-between">
+                <h3 class="text-base font-bold text-white">🗂️ Xuất từ vựng sang Anki</h3>
+                <button type="button" onclick="closeAnkiModal()" class="text-slate-400 hover:text-white text-lg leading-none">✕</button>
+            </div>
+
+            <div class="space-y-2 text-sm text-slate-200">
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="ankiScope" value="today" checked onchange="updateAnkiInfo()" class="accent-sky-500">
+                    <span>Từ đã luyện <strong>hôm nay</strong> (<span id="ankiCountToday">0</span>)</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="ankiScope" value="all" onchange="updateAnkiInfo()" class="accent-sky-500">
+                    <span><strong>Toàn bộ</strong> kho từ (<span id="ankiCountAll">0</span>)</span>
+                </label>
+            </div>
+
+            <div class="rounded-xl p-3.5 bg-[#1e293b] border border-slate-700 space-y-2.5">
+                <label class="block text-xs font-bold uppercase tracking-wider text-sky-400">Tên bộ thẻ (Deck)</label>
+                <input type="text" id="ankiDeckInput" placeholder="VocabFlow" class="w-full bg-[#0b0f19] border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500">
+                <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                    <input type="checkbox" id="ankiFirstCheck" checked onchange="updateAnkiInfo()" class="accent-sky-500">
+                    <span>Đáp án Anh → Việt chỉ lấy <strong>nghĩa đầu tiên</strong> (dễ gõ đúng hơn)</span>
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                    <input type="checkbox" id="ankiTagCheck" checked onchange="updateAnkiInfo()" class="accent-sky-500">
+                    <span>Gắn tag theo ngày luyện (vd: <span class="font-mono text-sky-300">vocabflow::2026-11-05</span>)</span>
+                </label>
+            </div>
+
+            <div id="ankiMissingBox" class="hidden rounded-xl p-3.5 bg-amber-500/10 border border-amber-500/30 space-y-2">
+                <p class="text-xs text-amber-200 leading-relaxed"><strong id="ankiMissingCount">0</strong> từ chưa có câu ví dụ (từ lưu trước khi có tính năng này). Bấm để AI bổ sung trước khi xuất.</p>
+                <button type="button" id="btnAnkiFill" onclick="fillMissingExamples()" class="w-full py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition disabled:opacity-50">✨ Bổ sung ví dụ bằng AI</button>
+            </div>
+
+            <div>
+                <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">Xem trước 1 thẻ</div>
+                <div id="ankiPreview" class="rounded-xl p-4 bg-[#0b0f19] border border-slate-700 text-slate-100 text-sm text-center leading-relaxed"></div>
+            </div>
+
+            <div class="space-y-2">
+                <div class="grid grid-cols-2 gap-2">
+                    <button type="button" onclick="downloadAnkiFile('en-vi')" class="py-2.5 rounded-lg bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-xs font-bold transition leading-snug">⬇️ Tải thẻ<br>Thấy Anh → Gõ Việt</button>
+                    <button type="button" onclick="downloadAnkiFile('vi-en')" class="py-2.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold transition leading-snug">⬇️ Tải thẻ<br>Thấy Việt → Gõ Anh</button>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <button type="button" onclick="copyAnkiText('en-vi')" class="py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 text-[11px] font-semibold transition">📋 Sao chép Anh → Việt</button>
+                    <button type="button" onclick="copyAnkiText('vi-en')" class="py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 text-[11px] font-semibold transition">📋 Sao chép Việt → Anh</button>
+                </div>
+            </div>
+
+            <details id="ankiImgPanel" ontoggle="if(this.open) loadAnkiImgPreview()" class="rounded-xl bg-[#1e293b] border border-sky-500/30 p-3.5">
+                <summary class="cursor-pointer text-xs font-bold uppercase tracking-wider text-sky-400">🖼️ Xem trước &amp; chọn ảnh từng từ</summary>
+                <p class="text-[11px] text-slate-400 leading-relaxed mt-2">Đây là ảnh sẽ đi kèm mỗi thẻ khi bạn tải gói <span class="font-mono">.apkg</span>. Bấm <strong>↻</strong> để đổi ảnh, <strong>🔎</strong> để tìm trên Google rồi <strong>📋 Dán</strong> ảnh bạn chọn (hoặc bấm vào dòng rồi Ctrl+V), <strong>🚫</strong> để thẻ không có ảnh.</p>
+                <div id="ankiImgList" class="mt-2 space-y-2 max-h-80 overflow-y-auto pr-1"></div>
+            </details>
+
+            <div class="rounded-xl p-3.5 bg-[#1e293b] border border-sky-500/30 space-y-2.5">
+                <div class="text-xs font-bold uppercase tracking-wider text-sky-400">📦 Gói kèm ảnh minh họa (.apkg)</div>
+                <p class="text-[11px] text-slate-400 leading-relaxed">Ảnh được gắn thẳng vào ô <strong>Front</strong> của thẻ (nằm dưới từ và câu ví dụ), nên hiện ngay khi bạn gõ đáp án. Cần có mạng lúc tạo gói để tải ảnh. Nhập bằng File → Import như file .txt.</p>
+                <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
+                    <input type="checkbox" id="apkgAudioCheck" checked class="accent-sky-500">
+                    <span>🔊 Kèm <strong>âm thanh đọc từ</strong> tiếng Anh</span>
+                </label>
+                <div class="grid grid-cols-2 gap-2">
+                    <button type="button" id="btnApkgEnVi" onclick="downloadApkg('en-vi')" class="py-2.5 rounded-lg bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-xs font-bold transition leading-snug disabled:opacity-50">📦 Anh → Việt<br>(có ảnh)</button>
+                    <button type="button" id="btnApkgViEn" onclick="downloadApkg('vi-en')" class="py-2.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold transition leading-snug disabled:opacity-50">📦 Việt → Anh<br>(có ảnh)</button>
+                </div>
+                <div id="apkgStatus" class="hidden text-[11px] text-sky-200"></div>
+            </div>
+
+            <details class="text-xs text-slate-300">
+                <summary class="cursor-pointer text-sky-300 font-semibold">Cách nhập vào Anki</summary>
+                <ol class="list-decimal pl-5 mt-2 space-y-1.5 leading-relaxed">
+                    <li>Mở Anki → menu <strong>File → Import</strong> (hoặc nút <strong>Import File</strong> ở màn hình chính).</li>
+                    <li>Chọn file <span class="font-mono">.txt</span> vừa tải. Hai loại thẻ nên nhập vào <strong>hai deck khác nhau</strong> (đổi tên deck ở trên giữa hai lần tải, vd "Anh-Việt" và "Việt-Anh").</li>
+                    <li>Kiểm tra <strong>Note Type = Basic (type in the answer)</strong>, <strong>Deck</strong> đúng ý (có thể đổi sang deck có sẵn), rồi bấm <strong>Import</strong>.</li>
+                    <li>Mỗi từ có mã riêng, nên nhập lại file mới sẽ <strong>cập nhật</strong> thẻ cũ chứ không tạo trùng.</li>
+                </ol>
+                <p class="mt-2 text-slate-400">Cần Anki bản 2.1.54 trở lên (bản của bạn đã đủ). Nếu Anki của bạn không phải tiếng Anh và không có Note Type tên "Basic (type in the answer)", hãy chọn thủ công ở bước 3.</p>
+            </details>
+        </div>
+    </div>
+
     <!-- KHUNG THÔNG BÁO TOAST (KHÔNG DÙNG ALERT) -->
     <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
@@ -694,7 +782,12 @@
             const input = document.getElementById("vocabInput");
 
             input.addEventListener("keydown", (e) => {
-                if (e.key === "Enter" || e.key === ",") {
+                if (e.isComposing) return;
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    commitInput();
+                    handleLookupWords();
+                } else if (e.key === ",") {
                     e.preventDefault();
                     commitInput();
                 } else if (e.key === "Backspace" && input.value === "" && appState.selectedWords.length > 0) {
@@ -896,9 +989,12 @@
                                 pos: { type: "STRING" },
                                 ipa: { type: "STRING" },
                                 meaningVi: { type: "STRING" },
-                                collocation: { type: "STRING" }
+                                collocation: { type: "STRING" },
+                                exampleEn: { type: "STRING" },
+                                exampleVi: { type: "STRING" },
+                                imageQuery: { type: "STRING" }
                             },
-                            propertyOrdering: ["word", "usedForm", "pos", "ipa", "meaningVi", "collocation"]
+                            propertyOrdering: ["word", "usedForm", "pos", "ipa", "meaningVi", "collocation", "exampleEn", "exampleVi", "imageQuery"]
                         }
                     }
                 },
@@ -915,7 +1011,10 @@ Nhiệm vụ: Đặt ${spec.unit} tự nhiên, giàu ngữ cảnh và dễ nhớ
   + 'pos': Từ loại (noun, verb, adj, adv, phrase...).
   + 'ipa': Phiên âm quốc tế chuẩn (ví dụ: /əbˈzɔːrb/).
   + 'meaningVi': Nghĩa tiếng Việt rõ ràng, sát ngữ cảnh trong câu.
-  + 'collocation': 1 cụm từ đi kèm phổ biến chứa từ đó kèm nghĩa ngắn gọn (ví dụ: "absorb information (tiếp thu thông tin)").`;
+  + 'collocation': 1 cụm từ đi kèm phổ biến chứa từ đó kèm nghĩa ngắn gọn (ví dụ: "absorb information (tiếp thu thông tin)").
+  + 'exampleEn': 1 câu ví dụ tiếng Anh ngắn gọn, tự nhiên, có chứa từ đó (có thể lấy từ câu vừa đặt, nhưng chỉ 1 câu).
+  + 'exampleVi': bản dịch tiếng Việt của 'exampleEn'.
+  + 'imageQuery': 1-3 từ khóa tiếng Anh CỤ THỂ, hình dung được bằng mắt (vật thể/cảnh/hành động, đúng nghĩa đang dùng) để tìm ảnh minh họa cho từ; với từ trừu tượng hãy chọn 1 cảnh đời thường tiêu biểu.`;
 
             const userPrompt = `Chế độ dịch: ${appState.practiceMode}
 Các từ mục tiêu: ${appState.selectedWords.join(", ")}
@@ -945,6 +1044,9 @@ Chủ đề ngữ cảnh: ${topic}${spec.userLine ? "\n" + spec.userLine : ""}`;
                             existing.pos = card.pos || existing.pos;
                             existing.ipa = card.ipa || existing.ipa;
                             existing.collocation = card.collocation || existing.collocation;
+                            existing.exampleEn = card.exampleEn || existing.exampleEn;
+                            existing.exampleVi = card.exampleVi || existing.exampleVi;
+                        existing.imageQuery = card.imageQuery || existing.imageQuery;
                         } else {
                             appState.vocabBank.unshift({
                                 word: card.word,
@@ -952,6 +1054,9 @@ Chủ đề ngữ cảnh: ${topic}${spec.userLine ? "\n" + spec.userLine : ""}`;
                                 ipa: card.ipa,
                                 meaningVi: card.meaningVi,
                                 collocation: card.collocation,
+                                exampleEn: card.exampleEn || "",
+                                exampleVi: card.exampleVi || "",
+                            imageQuery: card.imageQuery || "",
                                 count: 1,
                                 addedDate: todayISO(),
                                 lastDate: todayISO()
@@ -1038,6 +1143,7 @@ Chủ đề ngữ cảnh: ${topic}${spec.userLine ? "\n" + spec.userLine : ""}`;
             // Render Thẻ Từ Vựng (FLASHCARDS): Luôn hiển thị rõ nét 100% nghĩa tiếng Việt và collocation, tuyệt đối không làm mờ
             const cardsGrid = document.getElementById("wordCardsGrid");
             cardsGrid.innerHTML = (ch.wordCards || []).map(buildWordCardHtml).join("");
+            hydrateIllustrations(cardsGrid);
         }
 
         // Thẻ từ vựng dùng chung (khu luyện dịch + kết quả tra từ)
@@ -1074,6 +1180,7 @@ Chủ đề ngữ cảnh: ${topic}${spec.userLine ? "\n" + spec.userLine : ""}`;
                         </div>
                         ` : ''}
                     </div>
+                    <div class="illus" tabindex="0" data-word="${escapeHtml(card.word || '')}" data-query="${escapeHtml(card.imageQuery || card.word || '')}" data-offset="0"></div>
                 </div>
             `;
         }
@@ -1606,9 +1713,12 @@ Bản dịch của học viên: "${userTranslation}"`;
                                 pos: { type: "STRING" },
                                 ipa: { type: "STRING" },
                                 meaningVi: { type: "STRING" },
-                                collocation: { type: "STRING" }
+                                collocation: { type: "STRING" },
+                                exampleEn: { type: "STRING" },
+                                exampleVi: { type: "STRING" },
+                                imageQuery: { type: "STRING" }
                             },
-                            propertyOrdering: ["word", "pos", "ipa", "meaningVi", "collocation"]
+                            propertyOrdering: ["word", "pos", "ipa", "meaningVi", "collocation", "exampleEn", "exampleVi", "imageQuery"]
                         }
                     }
                 },
@@ -1621,7 +1731,10 @@ Với MỖI từ/cụm từ người dùng nhập, trả về đúng 1 thẻ t�
 - 'pos': từ loại (noun, verb, adj, adv, phrase...).
 - 'ipa': phiên âm quốc tế chuẩn (ví dụ: /əbˈzɔːrb/).
 - 'meaningVi': nghĩa tiếng Việt ngắn gọn, phổ biến nhất (tối đa 2-3 nghĩa chính, cách nhau dấu chấm phẩy).
-- 'collocation': 1 cụm từ đi kèm phổ biến chứa từ đó kèm nghĩa ngắn gọn (ví dụ: "absorb information (tiếp thu thông tin)").`;
+- 'collocation': 1 cụm từ đi kèm phổ biến chứa từ đó kèm nghĩa ngắn gọn (ví dụ: "absorb information (tiếp thu thông tin)").
+  + 'exampleEn': 1 câu ví dụ tiếng Anh ngắn gọn, tự nhiên, có chứa từ đó (có thể lấy từ câu vừa đặt, nhưng chỉ 1 câu).
+  + 'exampleVi': bản dịch tiếng Việt của 'exampleEn'.
+  + 'imageQuery': 1-3 từ khóa tiếng Anh CỤ THỂ, hình dung được bằng mắt (vật thể/cảnh/hành động, đúng nghĩa đang dùng) để tìm ảnh minh họa cho từ; với từ trừu tượng hãy chọn 1 cảnh đời thường tiêu biểu.`;
 
             const userPrompt = `Tra các từ sau: ${appState.selectedWords.join(", ")}`;
 
@@ -1638,6 +1751,9 @@ Với MỖI từ/cụm từ người dùng nhập, trả về đúng 1 thẻ t�
                         existing.pos = card.pos || existing.pos;
                         existing.ipa = card.ipa || existing.ipa;
                         existing.collocation = card.collocation || existing.collocation;
+                        existing.exampleEn = card.exampleEn || existing.exampleEn;
+                        existing.exampleVi = card.exampleVi || existing.exampleVi;
+                        existing.imageQuery = card.imageQuery || existing.imageQuery;
                     } else {
                         appState.vocabBank.unshift({
                             word: card.word,
@@ -1645,6 +1761,9 @@ Với MỖI từ/cụm từ người dùng nhập, trả về đúng 1 thẻ t�
                             ipa: card.ipa,
                             meaningVi: card.meaningVi,
                             collocation: card.collocation,
+                            exampleEn: card.exampleEn || "",
+                            exampleVi: card.exampleVi || "",
+                            imageQuery: card.imageQuery || "",
                             count: 1,
                             addedDate: todayISO(),
                             lastDate: todayISO()
@@ -1654,6 +1773,7 @@ Với MỖI từ/cụm từ người dùng nhập, trả về đúng 1 thẻ t�
                 saveStorage();
 
                 grid.innerHTML = cards.map(buildWordCardHtml).join("");
+                hydrateIllustrations(grid);
                 savedNote.classList.remove("hidden");
                 showToast(`Đã tra ${cards.length} từ và lưu vào Kho từ.`);
             } catch (error) {
@@ -1729,9 +1849,10 @@ Với MỖI từ/cụm từ người dùng nhập, trả về đúng 1 thẻ t�
                 type: "OBJECT",
                 properties: {
                     sourceLang: { type: "STRING" },
-                    translation: { type: "STRING" }
+                    translation: { type: "STRING" },
+                    imageQuery: { type: "STRING" }
                 },
-                propertyOrdering: ["sourceLang", "translation"]
+                propertyOrdering: ["sourceLang", "translation", "imageQuery"]
             };
 
             const systemPrompt = `Bạn là dịch giả Anh-Việt chuyên nghiệp.
@@ -1739,7 +1860,7 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
 - Nếu văn bản là tiếng Anh: dịch sang tiếng Việt, đặt sourceLang = "en".
 - Nếu văn bản là tiếng Việt: dịch sang tiếng Anh, đặt sourceLang = "vi".
 - Nếu là tiếng khác, dịch sang tiếng Việt và đặt sourceLang = "en".
-- Chỉ trả về bản dịch trong 'translation', không giải thích, không thêm ghi chú.`;
+- Chỉ trả về bản dịch trong 'translation', không giải thích, không thêm ghi chú.\n- 'imageQuery': 2-4 từ khóa tiếng Anh CỤ THỂ (vật thể/cảnh/hành động nhìn thấy được) để tìm ảnh minh họa cho nội dung; để chuỗi rỗng nếu nội dung quá trừu tượng.`;
 
             try {
                 const data = await callGeminiWithRetry(systemPrompt, text, schema);
@@ -1760,7 +1881,9 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
                             <button type="button" onclick="speakLastTranslation()" class="text-[11px] font-semibold px-2 py-1 rounded-md bg-[#0f172a] hover:bg-slate-700 text-slate-200 border border-slate-700 transition" title="Nghe bản tiếng Anh">🔊 Nghe tiếng Anh</button>
                         </div>
                         <p class="text-base text-emerald-100 leading-relaxed whitespace-pre-wrap">${escapeHtml(translation)}</p>
-                    </div>`;
+                    </div>
+                    ${(data.imageQuery || "").trim() ? `<div class="illus rounded-xl bg-[#1e293b] border border-slate-700 p-3" data-query="${escapeHtml(data.imageQuery.trim())}" data-offset="0"></div>` : ""}`;
+                hydrateIllustrations(grid);
             } catch (error) {
                 console.error("Lỗi dịch câu:", error);
                 if (err_isKeyProblem(error)) {
@@ -2194,6 +2317,569 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
 
         document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeExportModal(); });
 
+
+        // ==========================================
+        // 9. XUẤT TỪ VỰNG SANG ANKI (FILE NHẬP .txt)
+        // ==========================================
+        const ANKI_DECK_KEY = "vocabflow_anki_deck";
+
+        function getAnkiScope() {
+            const r = document.querySelector('input[name="ankiScope"]:checked');
+            return r ? r.value : "today";
+        }
+        function getAnkiItems() {
+            const today = todayISO();
+            const list = getAnkiScope() === "all"
+                ? appState.vocabBank.slice()
+                : appState.vocabBank.filter(i => i.lastDate === today);
+            return list.reverse();
+        }
+        function ankiHighlight(sentence, word) {
+            let html = escapeHtml(sentence || "");
+            const w = String(word || "").trim();
+            if (!w) return html;
+            const esc = escapeHtml(w).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            return html.replace(new RegExp("(^|[^A-Za-z])(" + esc + "[a-z]{0,4})(?![A-Za-z])", "gi"), "$1<b>$2</b>");
+        }
+        const ANKI_NOTETYPE = "Basic (type in the answer)";
+        const ANKI_MODES = {
+            "en-vi": { label: "Anh → Việt", file: "anh-viet" },
+            "vi-en": { label: "Việt → Anh", file: "viet-anh" }
+        };
+        function ankiFirstMeaning(text) {
+            return String(text || "").split(/\s*[;；]\s*/)[0].trim();
+        }
+        // Trả về { front, back }. Back chỉ chứa ĐÁP ÁN (thuần chữ) để Anki so với chữ bạn gõ.
+        function buildAnkiCard(i, mode) {
+            const ctx = 'margin-top:12px;font-size:16px;opacity:.8';
+            if (mode === "vi-en") {
+                let front = '<div style="font-size:28px;font-weight:bold">' + escapeHtml(i.meaningVi || "") + "</div>";
+                if (i.pos) front += '<div style="font-size:17px;opacity:.7;margin-top:4px"><i>' + escapeHtml(i.pos) + "</i></div>";
+                if (i.exampleVi) front += '<div style="' + ctx + '"><i>' + escapeHtml(i.exampleVi) + "</i></div>";
+                return { front, back: escapeHtml(i.word || "") };
+            }
+            const meta = [i.ipa ? escapeHtml(i.ipa) : "", i.pos ? "<i>" + escapeHtml(i.pos) + "</i>" : ""].filter(Boolean).join(" · ");
+            let front = '<div style="font-size:30px;font-weight:bold">' + escapeHtml(i.word || "") + "</div>";
+            if (meta) front += '<div style="font-size:17px;opacity:.7;margin-top:4px">' + meta + "</div>";
+            if (i.exampleEn) front += '<div style="' + ctx + '">' + ankiHighlight(i.exampleEn, i.word) + "</div>";
+            const firstOnly = document.getElementById("ankiFirstCheck").checked;
+            return { front, back: escapeHtml(firstOnly ? ankiFirstMeaning(i.meaningVi) : (i.meaningVi || "")) };
+        }
+        function ankiClean(v) {
+            return String(v ?? "").replace(/[\t\r\n]+/g, " ");
+        }
+        function buildAnkiText(items, mode) {
+            const deck = document.getElementById("ankiDeckInput").value.trim();
+            const withTags = document.getElementById("ankiTagCheck").checked;
+            const today = todayISO();
+            const head = ["#separator:tab", "#html:true", "#guid column:1", "#notetype:" + ANKI_NOTETYPE];
+            if (deck) head.push("#deck:" + ankiClean(deck));
+            if (withTags) head.push("#tags column:4");
+            const rows = items.map(i => {
+                const guid = "vocabflow-" + mode + "-" + String(i.word || "").trim().toLowerCase().replace(/\s+/g, "_");
+                const c = buildAnkiCard(i, mode);
+                const cols = [guid, c.front, c.back];
+                if (withTags) cols.push("vocabflow vocabflow::" + (i.lastDate || today));
+                return cols.map(ankiClean).join("\t");
+            });
+            return head.concat(rows).join("\n") + "\n";
+        }
+
+        function updateAnkiInfo() {
+            const today = todayISO();
+            document.getElementById("ankiCountToday").textContent = appState.vocabBank.filter(i => i.lastDate === today).length;
+            document.getElementById("ankiCountAll").textContent = appState.vocabBank.length;
+
+            const items = getAnkiItems();
+            const missing = items.filter(i => !i.exampleEn).length;
+            document.getElementById("ankiMissingCount").textContent = missing;
+            const imgPanel = document.getElementById("ankiImgPanel");
+            if (imgPanel) {
+                document.getElementById("ankiImgList").innerHTML = "";
+                if (imgPanel.open) loadAnkiImgPreview();
+            }
+            document.getElementById("ankiMissingBox").classList.toggle("hidden", missing === 0);
+
+            const prev = document.getElementById("ankiPreview");
+            if (!items.length) {
+                prev.innerHTML = '<span class="text-slate-500 text-xs">Chưa có từ nào để xuất.</span>';
+            } else {
+                const i = items[0];
+                prev.innerHTML = ["en-vi", "vi-en"].map(m => {
+                    const c = buildAnkiCard(i, m);
+                    return '<div class="mb-3 last:mb-0"><div class="text-[10px] font-bold uppercase tracking-wider text-sky-400 mb-1">' + ANKI_MODES[m].label + '</div>' +
+                        c.front +
+                        '<div class="mt-2 text-xs text-slate-400">Đáp án cần gõ: <span class="text-emerald-300 font-semibold">' + c.back + '</span></div></div>';
+                }).join('<hr style="border:0;border-top:1px solid #334155;margin:12px 0">');
+            }
+        }
+        function openAnkiModal() {
+            document.getElementById("ankiDeckInput").value = localStorage.getItem(ANKI_DECK_KEY) || "VocabFlow";
+            document.getElementById("ankiModal").classList.remove("hidden");
+            document.querySelector('input[name="ankiScope"][value="today"]').checked = true;
+            updateAnkiInfo();
+            if (getAnkiItems().length === 0 && appState.vocabBank.length > 0) {
+                document.querySelector('input[name="ankiScope"][value="all"]').checked = true;
+                updateAnkiInfo();
+            }
+        }
+        function closeAnkiModal() {
+            document.getElementById("ankiModal").classList.add("hidden");
+        }
+        function rememberAnkiDeck() {
+            try { localStorage.setItem(ANKI_DECK_KEY, document.getElementById("ankiDeckInput").value.trim()); } catch (e) {}
+        }
+        function downloadAnkiFile(mode) {
+            const items = getAnkiItems();
+            if (!items.length) { showToast("Chưa có từ nào để xuất."); return; }
+            rememberAnkiDeck();
+            const blob = new Blob([buildAnkiText(items, mode)], { type: "text/plain;charset=utf-8" });
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = "vocabflow-anki_" + ANKI_MODES[mode].file + "_" + todayISO() + ".txt";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+            showToast("Đã tải " + items.length + " thẻ " + ANKI_MODES[mode].label + ". Mở Anki → File → Import!");
+        }
+        function copyAnkiText(mode) {
+            const items = getAnkiItems();
+            if (!items.length) { showToast("Chưa có từ nào để xuất."); return; }
+            rememberAnkiDeck();
+            const temp = document.createElement("textarea");
+            temp.value = buildAnkiText(items, mode);
+            document.body.appendChild(temp);
+            temp.select();
+            document.execCommand("copy");
+            document.body.removeChild(temp);
+            showToast("Đã sao chép " + items.length + " thẻ " + ANKI_MODES[mode].label + ". Dán vào file .txt (UTF-8) rồi Import.");
+        }
+
+        async function fillMissingExamples() {
+            const targets = getAnkiItems().filter(i => !i.exampleEn);
+            if (!targets.length) return;
+            const btn = document.getElementById("btnAnkiFill");
+            btn.disabled = true;
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    examples: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                word: { type: "STRING" },
+                                exampleEn: { type: "STRING" },
+                                exampleVi: { type: "STRING" }
+                            },
+                            propertyOrdering: ["word", "exampleEn", "exampleVi"]
+                        }
+                    }
+                },
+                propertyOrdering: ["examples"]
+            };
+            const systemPrompt = `Bạn là giáo viên tiếng Anh. Với MỖI từ/cụm từ được đưa, viết 1 câu ví dụ tiếng Anh ngắn gọn, tự nhiên, đúng nghĩa đã cho, có chứa từ đó ('exampleEn') và bản dịch tiếng Việt ('exampleVi'). Trả về trong 'examples', giữ nguyên chữ ở 'word' như đầu vào.`;
+            let done = 0;
+            try {
+                for (let k = 0; k < targets.length; k += 20) {
+                    const chunk = targets.slice(k, k + 20);
+                    btn.textContent = "Đang bổ sung... (" + done + "/" + targets.length + ")";
+                    const userPrompt = chunk.map(i => "- " + i.word + (i.pos ? " (" + i.pos + ")" : "") + (i.meaningVi ? ": " + i.meaningVi : "")).join("\n");
+                    const data = await callGeminiWithRetry(systemPrompt, userPrompt, schema);
+                    (data.examples || []).forEach(ex => {
+                        const it = chunk.find(i => String(i.word).toLowerCase() === String(ex.word || "").trim().toLowerCase());
+                        if (it && ex.exampleEn) {
+                            it.exampleEn = ex.exampleEn;
+                            it.exampleVi = ex.exampleVi || "";
+                            done++;
+                        }
+                    });
+                    saveStorage();
+                }
+                showToast("Đã bổ sung ví dụ cho " + done + " từ.");
+            } catch (err) {
+                console.error("Lỗi bổ sung ví dụ:", err);
+                saveStorage();
+                showToast(err_isKeyProblem(err) ? "API key thiếu hoặc không hợp lệ. Bấm nút 🔑 API Key để nhập lại." : "Bổ sung ví dụ bị lỗi, thử lại sau nhé.");
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "✨ Bổ sung ví dụ bằng AI";
+                updateAnkiInfo();
+            }
+        }
+
+        document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAnkiModal(); });
+
+        // ==========================================
+        // 9c. XEM TRƯỚC & CHỌN ẢNH TỪNG TỪ TRƯỚC KHI XUẤT
+        // ==========================================
+        let ankiPreviewItems = [];
+        async function renderAnkiRow(idx) {
+            const it = ankiPreviewItems[idx];
+            const row = document.getElementById("ankiRow" + idx);
+            if (!it || !row) return;
+            const q = (it.imageQuery || it.word || "").trim();
+            const btn = 'px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-[11px]';
+            let imgHtml = '<span class="text-[10px] text-slate-500">Đang tìm...</span>';
+            row.innerHTML = ankiRowHtml(it, idx, imgHtml, btn);
+            let src = "", note = "";
+            if (it.noImage) note = "Không dùng ảnh";
+            else if (it.customImage) src = it.customImage;
+            else {
+                const list = await fetchIllustrations(q);
+                if (list.length) src = list[(it.imgIdx || 0) % list.length].thumb;
+                else note = "Không tìm được ảnh";
+            }
+            imgHtml = src
+                ? '<img src="' + escapeHtml(src) + '" referrerpolicy="no-referrer" class="w-full h-full object-cover" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{className:\'text-[10px] text-slate-500\',textContent:\'Ảnh lỗi, bấm ↻\'}))">'
+                : '<span class="text-[10px] text-slate-500 px-1 text-center">' + note + '</span>';
+            row.innerHTML = ankiRowHtml(it, idx, imgHtml, btn);
+        }
+        function ankiRowHtml(it, idx, imgHtml, btn) {
+            const gq = encodeURIComponent(it.word || "");
+            return '<div class="w-20 h-20 shrink-0 rounded-lg overflow-hidden bg-slate-800 border ' + (it.customImage && !it.noImage ? 'border-sky-400' : 'border-slate-700') + ' flex items-center justify-center">' + imgHtml + '</div>' +
+                '<div class="flex-1 min-w-0">' +
+                '<div class="text-sm font-bold text-indigo-300 truncate">' + escapeHtml(it.word || "") + (it.customImage && !it.noImage ? ' <span class="text-[9px] font-semibold px-1 rounded bg-sky-600 text-white align-middle">Ảnh của bạn</span>' : '') + '</div>' +
+                '<div class="text-[11px] text-slate-400 truncate">' + escapeHtml(it.meaningVi || "") + '</div>' +
+                '<div class="flex flex-wrap gap-1 mt-1.5">' +
+                '<button type="button" onclick="ankiImgNext(' + idx + ')" class="' + btn + '" title="Ảnh khác">↻</button>' +
+                '<a href="https://www.google.com/search?tbm=isch&q=' + gq + '" target="_blank" rel="noopener" class="' + btn + '" title="Tìm trên Google Ảnh">🔎</a>' +
+                '<button type="button" onclick="ankiImgPaste(' + idx + ')" class="' + btn + '" title="Dán ảnh đã copy từ Google">📋 Dán</button>' +
+                (it.customImage ? '<button type="button" onclick="ankiImgDropCustom(' + idx + ')" class="' + btn + '" title="Bỏ ảnh của tôi, dùng ảnh tự động">✕ Ảnh của tôi</button>' : '') +
+                '<button type="button" onclick="ankiImgToggle(' + idx + ')" class="' + btn + '" title="Bật/tắt ảnh cho thẻ này">' + (it.noImage ? '✓ Dùng ảnh' : '🚫 Bỏ ảnh') + '</button>' +
+                '</div></div>';
+        }
+        async function loadAnkiImgPreview() {
+            const list = document.getElementById("ankiImgList");
+            ankiPreviewItems = getAnkiItems();
+            if (!ankiPreviewItems.length) { list.innerHTML = '<div class="text-xs text-slate-500">Chưa có từ nào để xem trước.</div>'; return; }
+            list.innerHTML = ankiPreviewItems.map((it, idx) =>
+                '<div id="ankiRow' + idx + '" class="illus flex gap-3 items-center p-2 rounded-lg bg-[#0b0f19] border border-slate-700" data-word="' + escapeHtml(it.word || "") + '" data-anki-idx="' + idx + '"></div>').join("");
+            let next = 0;
+            const snapshot = ankiPreviewItems;
+            const worker = async () => {
+                while (next < snapshot.length && snapshot === ankiPreviewItems) { await renderAnkiRow(next++); }
+            };
+            await Promise.all([worker(), worker(), worker(), worker()]);
+        }
+        function ankiImgNext(idx) {
+            const it = ankiPreviewItems[idx]; if (!it) return;
+            it.noImage = false;
+            it.imgIdx = (it.imgIdx || 0) + 1;
+            saveStorage();
+            renderAnkiRow(idx);
+        }
+        function ankiImgToggle(idx) {
+            const it = ankiPreviewItems[idx]; if (!it) return;
+            it.noImage = !it.noImage;
+            saveStorage();
+            renderAnkiRow(idx);
+        }
+        function ankiImgDropCustom(idx) {
+            const it = ankiPreviewItems[idx]; if (!it) return;
+            delete it.customImage;
+            saveStorage();
+            renderAnkiRow(idx);
+        }
+        async function ankiImgPaste(idx) {
+            const row = document.getElementById("ankiRow" + idx);
+            if (!row) return;
+            activeIllus = row;
+            try {
+                const items = await navigator.clipboard.read();
+                for (const ci of items) {
+                    const type = ci.types.find(t => t.startsWith("image/"));
+                    if (type) { await saveCustomImage(row, await ci.getType(type)); ankiPreviewItems[idx].noImage = false; return; }
+                }
+                showToast("Clipboard chưa có ảnh. Trên Google: chuột phải ảnh → Sao chép hình ảnh.");
+            } catch (e) {
+                showToast("Trình duyệt chặn đọc clipboard. Bấm vào dòng này rồi nhấn Ctrl+V.");
+            }
+        }
+
+        // ==========================================
+        // 9b. XUẤT GÓI .APKG CÓ ẢNH MINH HỌA
+        // ==========================================
+        const SQLJS_BASE = "https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/";
+        const JSZIP_URL = "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
+        const APKG_MODEL_ID = 1739411000123;
+        const _scriptLoads = {};
+        function loadScriptOnce(src) {
+            if (_scriptLoads[src]) return _scriptLoads[src];
+            _scriptLoads[src] = new Promise((resolve, reject) => {
+                const el = document.createElement("script");
+                el.src = src;
+                el.onload = resolve;
+                el.onerror = () => { delete _scriptLoads[src]; reject(new Error("Không tải được thư viện: " + src)); };
+                document.head.appendChild(el);
+            });
+            return _scriptLoads[src];
+        }
+        let _sqlPromise = null;
+        async function ensureApkgLibs() {
+            await loadScriptOnce(JSZIP_URL);
+            await loadScriptOnce(SQLJS_BASE + "sql-wasm.js");
+            if (!_sqlPromise) _sqlPromise = initSqlJs({ locateFile: f => SQLJS_BASE + f });
+            return await _sqlPromise;
+        }
+        function hashStr(str) {
+            let h = 2166136261;
+            for (let k = 0; k < str.length; k++) { h ^= str.charCodeAt(k); h = Math.imul(h, 16777619); }
+            return (h >>> 0).toString(36);
+        }
+        async function ankiChecksum(text) {
+            try {
+                const buf = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(text));
+                return new DataView(buf).getUint32(0);
+            } catch (e) { return 0; }
+        }
+        function stripHtmlText(h) { return String(h || "").replace(/<[^>]*>/g, ""); }
+
+        async function fetchImageBlob(item) {
+            if (item.noImage) return null;
+            if (item.customImage) {
+                try { return await (await fetch(item.customImage)).blob(); } catch (e) { /* dùng ảnh tự động */ }
+            }
+            const q = (item.imageQuery || item.word || "").trim();
+            if (!q) return null;
+            const list = await fetchIllustrations(q);
+            const startAt = list.length ? (item.imgIdx || 0) % list.length : 0;
+            for (let k = 0; k < Math.min(list.length, 4); k++) {
+                try {
+                    const ctrl = new AbortController();
+                    const t = setTimeout(() => ctrl.abort(), 10000);
+                    const r = await fetch(list[(startAt + k) % list.length].thumb, { signal: ctrl.signal });
+                    clearTimeout(t);
+                    if (!r.ok) continue;
+                    const blob = await r.blob();
+                    if (!/^image\/(jpeg|png|webp)$/.test(blob.type) || blob.size > 1500000 || blob.size < 500) continue;
+                    return blob;
+                } catch (e) { /* thử ảnh kế tiếp */ }
+            }
+            return null;
+        }
+
+        // ---- Âm thanh đọc từ (từ điển miễn phí, dự phòng Gemini TTS) ----
+        const TTS_MODEL = "gemini-2.5-flash-preview-tts";
+        const audioCache = {};
+        function pcmToWavBlob(base64, rate) {
+            const bin = atob(base64);
+            const pcm = new Uint8Array(bin.length);
+            for (let k = 0; k < bin.length; k++) pcm[k] = bin.charCodeAt(k);
+            const buf = new ArrayBuffer(44 + pcm.length);
+            const v = new DataView(buf);
+            const w = (o, t) => { for (let k = 0; k < t.length; k++) v.setUint8(o + k, t.charCodeAt(k)); };
+            w(0, "RIFF"); v.setUint32(4, 36 + pcm.length, true); w(8, "WAVE"); w(12, "fmt ");
+            v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+            v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+            w(36, "data"); v.setUint32(40, pcm.length, true);
+            new Uint8Array(buf, 44).set(pcm);
+            return new Blob([buf], { type: "audio/wav" });
+        }
+        async function fetchDictAudio(word) {
+            if (/\s/.test(word)) return null;
+            try {
+                const data = await fetchJsonTimeout("https://api.dictionaryapi.dev/api/v2/entries/en/" + encodeURIComponent(word.toLowerCase()), 8000);
+                const urls = [];
+                (Array.isArray(data) ? data : []).forEach(e => (e.phonetics || []).forEach(ph => { if (ph.audio) urls.push(ph.audio); }));
+                urls.sort((a, b) => (/-us\./.test(b) ? 1 : 0) - (/-us\./.test(a) ? 1 : 0));
+                for (const u of urls.slice(0, 3)) {
+                    try {
+                        const r = await fetch(u);
+                        if (!r.ok) continue;
+                        const blob = await r.blob();
+                        if (blob.size > 500) return { blob, ext: /\.ogg/.test(u) ? "ogg" : "mp3" };
+                    } catch (e) { /* thử file kế tiếp */ }
+                }
+            } catch (e) { /* không có trong từ điển */ }
+            return null;
+        }
+        async function fetchGeminiTtsAudio(word) {
+            const key = getApiKey();
+            if (!key) return null;
+            const url = "https://generativelanguage.googleapis.com/v1beta/models/" + TTS_MODEL + ":generateContent?key=" + key;
+            const body = {
+                contents: [{ parts: [{ text: "Say clearly in American English: " + word }] }],
+                generationConfig: {
+                    responseModalities: ["AUDIO"],
+                    speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
+                }
+            };
+            for (let attempt = 0; attempt < 3; attempt++) {
+                try {
+                    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+                    if (r.status === 429) { await new Promise(res => setTimeout(res, 4000 * (attempt + 1))); continue; }
+                    if (!r.ok) return null;
+                    const j = await r.json();
+                    const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
+                    const part = parts.find(x => x.inlineData && x.inlineData.data);
+                    if (!part) return null;
+                    const m = /rate=(\d+)/.exec(part.inlineData.mimeType || "");
+                    return { blob: pcmToWavBlob(part.inlineData.data, m ? parseInt(m[1], 10) : 24000), ext: "wav" };
+                } catch (e) { return null; }
+            }
+            return null;
+        }
+        async function getWordAudio(item) {
+            const w = String(item.word || "").trim();
+            if (!w) return null;
+            const k = w.toLowerCase();
+            if (audioCache[k]) return audioCache[k];
+            let a = await fetchDictAudio(w);
+            if (!a) a = await fetchGeminiTtsAudio(w);
+            if (a) audioCache[k] = a;
+            return a;
+        }
+
+        async function downloadApkg(mode) {
+            const items = getAnkiItems();
+            if (!items.length) { showToast("Chưa có từ nào để xuất."); return; }
+            rememberAnkiDeck();
+            const btns = [document.getElementById("btnApkgEnVi"), document.getElementById("btnApkgViEn")];
+            const status = document.getElementById("apkgStatus");
+            btns.forEach(b => b.disabled = true);
+            status.classList.remove("hidden");
+            const say = t => { status.textContent = t; };
+            try {
+                say("Đang tải thư viện tạo gói Anki...");
+                const SQL = await ensureApkgLibs();
+
+                // 1) Tải ảnh (4 luồng song song)
+                const images = new Array(items.length).fill(null);
+                let next = 0, doneImgs = 0;
+                const worker = async () => {
+                    while (next < items.length) {
+                        const idx = next++;
+                        images[idx] = await fetchImageBlob(items[idx]);
+                        doneImgs++;
+                        say("Đang tải ảnh minh họa... " + doneImgs + "/" + items.length);
+                    }
+                };
+                await Promise.all([worker(), worker(), worker(), worker()]);
+
+                // 1b) Âm thanh đọc từ
+                const wantAudio = document.getElementById("apkgAudioCheck").checked;
+                const audios = new Array(items.length).fill(null);
+                if (wantAudio) {
+                    let nextA = 0, doneA = 0;
+                    const workerA = async () => {
+                        while (nextA < items.length) {
+                            const idx = nextA++;
+                            audios[idx] = await getWordAudio(items[idx]);
+                            doneA++;
+                            say("Đang tạo âm thanh đọc từ... " + doneA + "/" + items.length);
+                        }
+                    };
+                    await Promise.all([workerA(), workerA(), workerA()]);
+                }
+
+                // 2) Dựng collection.anki2
+                say("Đang đóng gói...");
+                const deckName = document.getElementById("ankiDeckInput").value.trim() || "VocabFlow";
+                const withTags = document.getElementById("ankiTagCheck").checked;
+                const nowMs = Date.now();
+                const nowSec = Math.floor(nowMs / 1000);
+                const deckId = 1600000000000 + (parseInt(hashStr(deckName), 36) % 1000000000);
+                const mid = APKG_MODEL_ID + 20 + (mode === "vi-en" ? 1 : 0);
+                const css = ".card{font-family:arial;font-size:20px;text-align:center;color:black;background-color:white}.nightMode .card{color:#e5e7eb;background-color:#1f2937}img{max-width:320px;max-height:240px;border-radius:8px;margin-top:10px}";
+                const fld = (name, ord) => ({ name, ord, sticky: false, rtl: false, font: "Arial", size: 20, media: [] });
+                const models = {};
+                models[mid] = {
+                    id: mid, name: mode === "vi-en" ? "VocabFlow (gõ đáp án, ảnh + âm thanh) Việt→Anh" : "VocabFlow (gõ đáp án, ảnh + âm thanh) Anh→Việt", type: 0, mod: nowSec, usn: -1, sortf: 0, did: deckId,
+                    tmpls: [{
+                        name: "Card 1", ord: 0,
+                        qfmt: mode === "vi-en" ? "{{Front}}<br>{{type:Back}}" : "{{Front}}<br>{{Audio}}<br>{{type:Back}}",
+                        afmt: mode === "vi-en" ? "{{Front}}<hr id=answer>{{type:Back}}<br>{{Audio}}" : "{{Front}}<hr id=answer>{{type:Back}}",
+                        bqfmt: "", bafmt: "", did: null, bfont: "", bsize: 0
+                    }],
+                    flds: [fld("Front", 0), fld("Back", 1), fld("Audio", 2)],
+                    css, latexPre: "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n",
+                    latexPost: "\\end{document}", latexsvg: false, req: [[0, "all", [0]]], tags: [], vers: []
+                };
+                const deckBase = (id, name) => ({
+                    id, name, mod: nowSec, usn: -1, lrnToday: [0, 0], revToday: [0, 0], newToday: [0, 0], timeToday: [0, 0],
+                    collapsed: false, browserCollapsed: false, desc: "", dyn: 0, conf: 1, extendedNew: 0, extendedRev: 0
+                });
+                const decks = { "1": deckBase(1, "Default") };
+                decks[deckId] = deckBase(deckId, deckName);
+                const dconf = { "1": {
+                    id: 1, name: "Default", replayq: true, timer: 0, maxTaken: 60, usn: 0, mod: 0, autoplay: true,
+                    lapse: { leechFails: 8, minInt: 1, delays: [10], leechAction: 0, mult: 0 },
+                    rev: { perDay: 200, ease4: 1.3, fuzz: 0.05, minSpace: 1, ivlFct: 1, maxIvl: 36500, bury: true },
+                    new: { perDay: 20, delays: [1, 10], separate: true, ints: [1, 4, 7], initialFactor: 2500, bury: true, order: 1 }
+                } };
+                const conf = { nextPos: items.length + 1, estTimeNew: 20, curModel: String(mid), activeDecks: [1], sortType: "noteFld", timeLim: 0, sortBackwards: false, addToCur: true, curDeck: 1, newBury: true, newSpread: 0, dueCounts: true, collapseTime: 1200 };
+
+                const db = new SQL.Database();
+                db.run("CREATE TABLE col (id integer primary key, crt integer not null, mod integer not null, scm integer not null, ver integer not null, dty integer not null, usn integer not null, ls integer not null, conf text not null, models text not null, decks text not null, dconf text not null, tags text not null);");
+                db.run("CREATE TABLE notes (id integer primary key, guid text not null, mid integer not null, mod integer not null, usn integer not null, tags text not null, flds text not null, sfld integer not null, csum integer not null, flags integer not null, data text not null);");
+                db.run("CREATE TABLE cards (id integer primary key, nid integer not null, did integer not null, ord integer not null, mod integer not null, usn integer not null, type integer not null, queue integer not null, due integer not null, ivl integer not null, factor integer not null, reps integer not null, lapses integer not null, left integer not null, odue integer not null, odid integer not null, flags integer not null, data text not null);");
+                db.run("CREATE TABLE revlog (id integer primary key, cid integer not null, usn integer not null, ease integer not null, ivl integer not null, lastIvl integer not null, factor integer not null, time integer not null, type integer not null);");
+                db.run("CREATE TABLE graves (usn integer not null, oid integer not null, type integer not null);");
+                db.run("INSERT INTO col VALUES (1,?,?,?,11,0,0,0,?,?,?,?,?)",
+                    [nowSec, nowMs, nowMs, JSON.stringify(conf), JSON.stringify(models), JSON.stringify(decks), JSON.stringify(dconf), "{}"]);
+
+                const zip = new JSZip();
+                const mediaMap = {};
+                let mediaCount = 0, withImg = 0, nAudio = 0;
+                const today = todayISO();
+                for (let k = 0; k < items.length; k++) {
+                    const it = items[k];
+                    const c = buildAnkiCard(it, mode);
+                    let imgHtml = "";
+                    if (images[k]) {
+                        const ext = images[k].type === "image/png" ? "png" : images[k].type === "image/webp" ? "webp" : "jpg";
+                        const fname = "vf_" + hashStr(String(it.word || "").toLowerCase()) + "." + ext;
+                        zip.file(String(mediaCount), images[k]);
+                        mediaMap[String(mediaCount)] = fname;
+                        mediaCount++; withImg++;
+                        imgHtml = '<img src="' + fname + '" style="max-width:300px;max-height:220px;border-radius:8px;margin-top:10px">';
+                    }
+                    let audioTag = "";
+                    if (audios[k]) {
+                        const aname = "vf_a_" + hashStr(String(it.word || "").toLowerCase()) + "." + audios[k].ext;
+                        zip.file(String(mediaCount), audios[k].blob);
+                        mediaMap[String(mediaCount)] = aname;
+                        mediaCount++; nAudio++;
+                        audioTag = "[sound:" + aname + "]";
+                    }
+                    const ipaTag = (mode === "vi-en" && it.ipa)
+                        ? '<div style="font-size:20px;color:#888;margin-top:8px">' + escapeHtml(it.ipa) + '</div>' : "";
+                    const guid = "vocabflow-imga-" + mode + "-" + String(it.word || "").trim().toLowerCase().replace(/\s+/g, "_");
+                    const noteId = nowMs + k * 2;
+                    const cardId = nowMs + k * 2 + 1;
+                    const front = c.front + (imgHtml ? '<div>' + imgHtml + '</div>' : "");
+                    const tags = withTags ? " vocabflow vocabflow::" + (it.lastDate || today) + " " : "";
+                    const csum = await ankiChecksum(stripHtmlText(front));
+                    db.run("INSERT INTO notes VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                        [noteId, guid, mid, nowSec, -1, tags, [front, c.back, ipaTag + audioTag].join("\x1f"), stripHtmlText(front), csum, 0, ""]);
+                    db.run("INSERT INTO cards VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        [cardId, noteId, deckId, 0, nowSec, -1, 0, 0, k + 1, 0, 0, 0, 0, 0, 0, 0, 0, ""]);
+                }
+                zip.file("collection.anki2", db.export());
+                zip.file("media", JSON.stringify(mediaMap));
+                db.close();
+
+                const out = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(out);
+                a.download = "vocabflow-anki_" + ANKI_MODES[mode].file + "_co-anh_" + todayISO() + ".apkg";
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+                say("Xong: " + items.length + " thẻ, " + withImg + " thẻ có ảnh" + (wantAudio ? ", " + nAudio + " thẻ có âm thanh" : "") + (withImg < items.length ? " (" + (items.length - withImg) + " thẻ không tìm được ảnh)." : "."));
+                showToast("Đã tải gói .apkg (" + withImg + "/" + items.length + " thẻ có ảnh). Mở Anki → File → Import!");
+            } catch (err) {
+                console.error("Lỗi tạo .apkg:", err);
+                say("Không tạo được gói .apkg: " + (err && err.message ? err.message : "lỗi không rõ") + ". Kiểm tra mạng rồi thử lại, hoặc dùng file .txt.");
+                showToast("Tạo gói .apkg thất bại, xem thông báo trong khung Anki.");
+            } finally {
+                btns.forEach(b => b.disabled = false);
+            }
+        }
+
         function copyTextToClipboard(text) {
             const temp = document.createElement("textarea");
             temp.value = text;
@@ -2219,6 +2905,189 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
                 toast.style.transform = "translateY(8px)";
                 setTimeout(() => toast.remove(), 300);
             }, 2600);
+        }
+
+        // ==========================================
+        // 7e. ẢNH MINH HỌA (WIKIMEDIA COMMONS + OPENVERSE, KHÔNG CẦN API KEY)
+        // ==========================================
+        const illusCache = {};
+        async function fetchJsonTimeout(url, ms) {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), ms || 8000);
+            try {
+                const r = await fetch(url, { signal: ctrl.signal });
+                if (!r.ok) throw new Error("HTTP " + r.status);
+                return await r.json();
+            } finally { clearTimeout(t); }
+        }
+        async function fetchIllustrations(q) {
+            const key = String(q).trim().toLowerCase();
+            if (!key) return [];
+            if (illusCache[key]) return illusCache[key];
+            const out = [];
+            const seen = new Set();
+            const add = (thumb, page) => {
+                if (!thumb || seen.has(thumb)) return;
+                seen.add(thumb);
+                out.push({ thumb, page: page || thumb });
+            };
+            try {
+                const url = "https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&generator=search&gsrnamespace=6&gsrlimit=12&gsrsearch=" +
+                    encodeURIComponent(q + " filetype:bitmap") + "&prop=imageinfo&iiprop=url|mime&iiurlwidth=400";
+                const data = await fetchJsonTimeout(url);
+                Object.values((data.query && data.query.pages) || {})
+                    .sort((a, b) => (a.index || 0) - (b.index || 0))
+                    .forEach(pg => {
+                        const ii = pg.imageinfo && pg.imageinfo[0];
+                        if (ii && /^image\/(jpeg|png|webp)$/.test(ii.mime || "")) add(ii.thumburl, ii.descriptionurl);
+                    });
+            } catch (e) { console.warn("Commons lỗi:", e); }
+            if (out.length < 3) {
+                try {
+                    const data = await fetchJsonTimeout("https://api.openverse.org/v1/images/?page_size=12&q=" + encodeURIComponent(q));
+                    (data.results || []).forEach(r => add(r.thumbnail || r.url, r.foreign_landing_url));
+                } catch (e) { console.warn("Openverse lỗi:", e); }
+            }
+            if (out.length) illusCache[key] = out;
+            return out;
+        }
+        function getBankItemByWord(w) {
+            const k = String(w || "").trim().toLowerCase();
+            if (!k) return null;
+            return appState.vocabBank.find(i => String(i.word || "").toLowerCase() === k) || null;
+        }
+        async function renderIllus(el, offset) {
+            const q = el.dataset.query || "";
+            const word = el.dataset.word || "";
+            const item = word ? getBankItemByWord(word) : null;
+            const custom = item && item.customImage ? item.customImage : "";
+            if (!q && !word) { el.innerHTML = ""; return; }
+            el.innerHTML = '<div class="text-[11px] text-slate-500">🖼️ Đang tìm ảnh minh họa...</div>';
+            const auto = q ? await fetchIllustrations(q) : [];
+            const slots = [];
+            if (custom) slots.push({ thumb: custom, custom: true });
+            const need = 3 - slots.length;
+            for (let k = 0; k < Math.min(need, auto.length); k++) slots.push(auto[(offset + k) % auto.length]);
+
+            let html = "";
+            if (slots.length) {
+                html += '<div class="grid grid-cols-3 gap-1.5">';
+                slots.forEach(it => {
+                    const img = '<img src="' + escapeHtml(it.thumb) + '" alt="' + escapeHtml(q || word) + '" loading="lazy" referrerpolicy="no-referrer" ' +
+                        'class="w-full h-20 sm:h-24 object-cover rounded-lg border ' + (it.custom ? 'border-sky-400' : 'border-slate-700') + ' bg-slate-800" ' +
+                        'onerror="this.parentElement.remove()">';
+                    html += it.custom
+                        ? '<span class="block relative" title="Ảnh bạn đã chọn">' + img + '<span class="absolute top-1 left-1 text-[9px] px-1 rounded bg-sky-600 text-white">Ảnh của bạn</span></span>'
+                        : '<a href="' + escapeHtml(it.page || it.thumb) + '" target="_blank" rel="noopener" class="block">' + img + '</a>';
+                });
+                html += '</div>';
+            }
+            const gq = encodeURIComponent(word || q);
+            const btn = 'px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700';
+            html += '<div class="flex flex-wrap items-center gap-1.5 mt-1.5 text-[10px] text-slate-400">' +
+                '<a href="https://www.google.com/search?tbm=isch&q=' + gq + '" target="_blank" rel="noopener" class="' + btn + '">🔎 Google Ảnh</a>';
+            if (word) html += '<button type="button" onclick="pasteIllusFromClipboard(this)" class="' + btn + '" title="Copy ảnh trên Google rồi bấm đây (hoặc bấm vào khung ảnh và nhấn Ctrl+V)">📋 Dán ảnh</button>';
+            if (custom) html += '<button type="button" onclick="removeCustomImage(this)" class="' + btn + '">✕ Bỏ ảnh của tôi</button>';
+            if (auto.length > need) html += '<button type="button" onclick="shuffleIllus(this)" class="' + btn + '">↻ Ảnh khác</button>';
+            html += '<span class="text-slate-500">' + (word ? 'Copy ảnh từ Google → Ctrl+V ở đây' : 'Ảnh: ' + escapeHtml(q)) + '</span></div>';
+            el.innerHTML = html;
+        }
+
+        // ---- Dán / thả ảnh tự chọn (từ Google Ảnh hoặc file) ----
+        async function blobToSmallDataUrl(blob) {
+            const bmp = await createImageBitmap(blob);
+            const max = 420;
+            const sc = Math.min(1, max / Math.max(bmp.width, bmp.height));
+            const c = document.createElement("canvas");
+            c.width = Math.max(1, Math.round(bmp.width * sc));
+            c.height = Math.max(1, Math.round(bmp.height * sc));
+            const ctx = c.getContext("2d");
+            ctx.fillStyle = "#fff";
+            ctx.fillRect(0, 0, c.width, c.height);
+            ctx.drawImage(bmp, 0, 0, c.width, c.height);
+            return c.toDataURL("image/jpeg", 0.8);
+        }
+        async function saveCustomImage(el, blob) {
+            const word = el && el.dataset.word;
+            const item = getBankItemByWord(word);
+            if (!item) { showToast("Từ này chưa có trong Kho từ nên chưa lưu được ảnh."); return; }
+            try {
+                item.customImage = await blobToSmallDataUrl(blob);
+                saveStorage();
+                showToast("Đã lưu ảnh cho từ \"" + word + "\" (sẽ dùng khi xuất Anki).");
+                if (el.dataset.ankiIdx !== undefined) renderAnkiRow(parseInt(el.dataset.ankiIdx, 10));
+                else renderIllus(el, parseInt(el.dataset.offset || "0", 10));
+            } catch (e) {
+                console.error("Lỗi xử lý ảnh:", e);
+                showToast("Không đọc được ảnh này, thử ảnh khác nhé.");
+            }
+        }
+        async function pasteIllusFromClipboard(btn) {
+            const el = btn.closest(".illus");
+            if (!el) return;
+            activeIllus = el;
+            try {
+                const items = await navigator.clipboard.read();
+                for (const it of items) {
+                    const type = it.types.find(t => t.startsWith("image/"));
+                    if (type) { await saveCustomImage(el, await it.getType(type)); return; }
+                }
+                showToast("Clipboard chưa có ảnh. Trên Google: chuột phải ảnh → Sao chép hình ảnh.");
+            } catch (e) {
+                showToast("Trình duyệt chặn đọc clipboard. Bấm vào khung ảnh rồi nhấn Ctrl+V.");
+            }
+        }
+        function removeCustomImage(btn) {
+            const el = btn.closest(".illus");
+            const item = el && getBankItemByWord(el.dataset.word);
+            if (!item) return;
+            delete item.customImage;
+            saveStorage();
+            renderIllus(el, parseInt(el.dataset.offset || "0", 10));
+        }
+        let activeIllus = null;
+        document.addEventListener("click", (e) => {
+            const el = e.target.closest && e.target.closest(".illus");
+            if (el) {
+                activeIllus = el;
+                document.querySelectorAll(".illus.illus-active").forEach(x => x.classList.remove("illus-active"));
+                el.classList.add("illus-active");
+            }
+        });
+        document.addEventListener("paste", (e) => {
+            if (!activeIllus || !document.body.contains(activeIllus) || !activeIllus.dataset.word) return;
+            const tag = (document.activeElement && document.activeElement.tagName) || "";
+            if (/INPUT|TEXTAREA/.test(tag)) return;
+            const items = (e.clipboardData && e.clipboardData.items) || [];
+            for (const it of items) {
+                if (it.type && it.type.startsWith("image/")) {
+                    e.preventDefault();
+                    saveCustomImage(activeIllus, it.getAsFile());
+                    return;
+                }
+            }
+        });
+        document.addEventListener("dragover", (e) => { if (e.target.closest && e.target.closest(".illus[data-word]")) e.preventDefault(); });
+        document.addEventListener("drop", (e) => {
+            const el = e.target.closest && e.target.closest(".illus[data-word]");
+            if (!el) return;
+            e.preventDefault();
+            const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+            if (f && f.type.startsWith("image/")) saveCustomImage(el, f);
+        });
+
+        function shuffleIllus(btn) {
+            const el = btn.closest(".illus");
+            if (!el) return;
+            const off = (parseInt(el.dataset.offset || "0", 10) + 3);
+            el.dataset.offset = off;
+            renderIllus(el, off);
+        }
+        function hydrateIllustrations(root) {
+            (root || document).querySelectorAll(".illus[data-query]:not([data-done])").forEach(el => {
+                el.dataset.done = "1";
+                renderIllus(el, 0);
+            });
         }
 
         function escapeHtml(str) {
