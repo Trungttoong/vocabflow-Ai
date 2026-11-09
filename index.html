@@ -1775,6 +1775,7 @@ Với MỖI từ/cụm từ người dùng nhập, trả về đúng 1 thẻ t�
                 grid.innerHTML = cards.map(buildWordCardHtml).join("");
                 hydrateIllustrations(grid);
                 savedNote.classList.remove("hidden");
+                try { enrichLookupCards(cards, grid); } catch (e) { console.error("Lỗi tải panel mở rộng:", e); }
                 showToast(`Đã tra ${cards.length} từ và lưu vào Kho từ.`);
             } catch (error) {
                 console.error("Lỗi tra từ:", error);
@@ -1790,6 +1791,319 @@ Với MỖI từ/cụm từ người dùng nhập, trả về đúng 1 thẻ t�
                 btn.disabled = false;
                 btn.innerHTML = "🔍";
             }
+        }
+
+        // ==========================================
+        // 7c-1. PANEL MỞ RỘNG BÊN PHẢI: HỌ TỪ + CẤU TRÚC/GIỚI TỪ (CÓ NÚT + THÊM VÀO KHO)
+        // (Chỉ thêm mới - không thay đổi logic tra từ ở trên)
+        // ==========================================
+        const lkExtra = { token: 0, items: {}, seq: 0, cards: null, grid: null };
+
+        function lkInBank(word) {
+            const w = String(word || "").toLowerCase();
+            return appState.vocabBank.some(i => (i.word || "").toLowerCase() === w);
+        }
+
+        function lkAddBtnHtml(id, word) {
+            const done = lkInBank(word);
+            return `<button type="button" data-lkid="${id}" onclick="lookupAddToBank('${id}', this); event.stopPropagation();"
+                class="w-6 h-6 shrink-0 rounded-md text-sm font-bold flex items-center justify-center border transition ${
+                    done ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 cursor-default'
+                         : 'bg-slate-800 text-sky-300 border-slate-600 hover:bg-sky-600 hover:text-white hover:border-sky-500'}"
+                title="${done ? 'Đã có trong Kho từ' : 'Thêm vào Kho từ'}">${done ? '✓' : '+'}</button>`;
+        }
+
+        function lookupAddToBank(id, btn) {
+            const it = lkExtra.items[id];
+            if (!it) return;
+            if (lkInBank(it.word)) {
+                showToast(`"${it.word}" đã có trong Kho từ.`);
+            } else {
+                appState.vocabBank.unshift({
+                    word: it.word,
+                    pos: it.pos || "",
+                    ipa: it.ipa || "",
+                    meaningVi: it.meaningVi || "",
+                    collocation: it.collocation || "",
+                    exampleEn: it.exampleEn || "",
+                    exampleVi: it.exampleVi || "",
+                    imageQuery: it.word,
+                    count: 1,
+                    addedDate: todayISO(),
+                    lastDate: todayISO()
+                });
+                saveStorage();
+                showToast(`Đã thêm "${it.word}" vào Kho từ.`);
+            }
+            // Cập nhật mọi nút + của cùng 1 từ (nếu xuất hiện nhiều nơi)
+            document.querySelectorAll('.lk-extra [data-lkid]').forEach(b => {
+                const other = lkExtra.items[b.getAttribute('data-lkid')];
+                if (other && lkInBank(other.word)) {
+                    b.textContent = "✓";
+                    b.title = "Đã có trong Kho từ";
+                    b.className = "w-6 h-6 shrink-0 rounded-md text-sm font-bold flex items-center justify-center border transition bg-emerald-500/20 text-emerald-300 border-emerald-500/40 cursor-default";
+                }
+            });
+        }
+
+        function lkRegister(obj) {
+            const id = "lk" + (++lkExtra.seq);
+            lkExtra.items[id] = obj;
+            return id;
+        }
+
+        function lkPanelShell(inner) {
+            return `<div class="lk-extra inner-surface rounded-xl p-3 flex flex-col gap-2.5 max-h-[520px] overflow-y-auto">${inner}</div>`;
+        }
+
+        function lkLoadingHtml() {
+            return lkPanelShell(`
+                <div class="flex items-center gap-2 text-xs text-slate-400 py-6 justify-center">
+                    <span class="inline-block w-4 h-4 border-2 border-sky-500/30 border-t-sky-400 rounded-full animate-spin"></span>
+                    Đang tải loại từ, thành ngữ & cấu trúc...
+                </div>`);
+        }
+
+        const LK_POS_VI = { noun: "danh từ", verb: "động từ", adj: "tính từ", adjective: "tính từ", adv: "trạng từ", adverb: "trạng từ", prep: "giới từ", preposition: "giới từ", conj: "liên từ", pron: "đại từ", interj: "thán từ", phrase: "cụm từ" };
+
+        function lkPosKey(pos) {
+            const k = String(pos || "").toLowerCase().trim().split(/[\s,\/]/)[0];
+            const map = { adjective: "adj", adverb: "adv", preposition: "prep" };
+            return map[k] || k;
+        }
+
+        const LK_POS_STYLE = {
+            noun: { border: "border-sky-500/40", bg: "bg-sky-500/5", text: "text-sky-300" },
+            verb: { border: "border-emerald-500/40", bg: "bg-emerald-500/5", text: "text-emerald-300" },
+            adj:  { border: "border-violet-500/40", bg: "bg-violet-500/5", text: "text-violet-300" },
+            adv:  { border: "border-orange-500/40", bg: "bg-orange-500/5", text: "text-orange-300" },
+            _def: { border: "border-slate-600/70", bg: "bg-slate-800/40", text: "text-slate-200" }
+        };
+
+        function lkBox(title, inner, styleKey, extraTitleClass) {
+            const st = LK_POS_STYLE[styleKey] || LK_POS_STYLE._def;
+            return `
+                <div class="rounded-xl border ${st.border} ${st.bg} p-2.5">
+                    <div class="text-[11px] font-extrabold uppercase tracking-wide ${st.text} mb-2 ${extraTitleClass || ''}">${escapeHtml(title)}</div>
+                    <div class="space-y-1.5">${inner}</div>
+                </div>`;
+        }
+
+        function lkCell(inner) {
+            return `<div class="rounded-lg bg-slate-900/50 border border-slate-700/50 px-2.5 py-2 text-sm leading-snug text-slate-100">${inner}</div>`;
+        }
+
+        function lkExampleHtml(en, vi) {
+            if (!en) return '';
+            return `<div class="mt-1 text-[11px] leading-snug border-l-2 border-slate-600 pl-2">
+                        <div class="text-slate-200 italic">${escapeHtml(en)}</div>
+                        ${vi ? `<div class="text-slate-400">${escapeHtml(vi)}</div>` : ''}
+                    </div>`;
+        }
+
+        function lkExtraHtml(entry, headword) {
+            entry = entry || {};
+            const senses = (Array.isArray(entry.senses) ? entry.senses : [])
+                .map(g => ({ pos: g && g.pos, meanings: (g && Array.isArray(g.meanings) ? g.meanings : []).filter(m => m && m.meaningVi) }))
+                .filter(g => g.pos && g.meanings.length);
+            const idioms = (Array.isArray(entry.idioms) ? entry.idioms : []).filter(i => i && i.idiom);
+            const patterns = (Array.isArray(entry.patterns) ? entry.patterns : []).filter(p => p && p.pattern);
+            const forms = (Array.isArray(entry.forms) ? entry.forms : [])
+                .filter(f => f && f.word && String(f.word).toLowerCase() !== String(headword).toLowerCase());
+
+            // Gom theo loại từ: nghĩa của từ gốc + các từ cùng họ thuộc loại từ đó nằm CHUNG 1 ô
+            const groups = [];
+            const getGroup = (pos) => {
+                const key = lkPosKey(pos);
+                let g = groups.find(x => x.key === key);
+                if (!g) { g = { key, label: LK_POS_VI[key] || String(pos), meanings: [], forms: [] }; groups.push(g); }
+                return g;
+            };
+            senses.forEach(sg => { getGroup(sg.pos).meanings.push(...sg.meanings); });
+            forms.forEach(f => { getGroup(f.pos || "").forms.push(f); });
+
+            const groupHtml = groups.map(g => {
+                const meaningCells = g.meanings.map(m =>
+                    lkCell(`<div>${escapeHtml(m.meaningVi)}</div>${lkExampleHtml(m.exampleEn, m.exampleVi)}`)
+                ).join("");
+                const formCells = g.forms.map(f => {
+                    const id = lkRegister({ word: f.word, pos: f.pos, ipa: f.ipa, meaningVi: f.meaningVi, exampleEn: f.exampleEn, exampleVi: f.exampleVi });
+                    return lkCell(`
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="min-w-0 flex-1">
+                                <span class="font-bold text-indigo-300">${escapeHtml(f.word)}</span>
+                                ${f.ipa ? `<span class="text-[11px] font-mono text-slate-400"> ${escapeHtml(f.ipa)}</span>` : ''}
+                                <span class="text-slate-100"> – ${escapeHtml(f.meaningVi || '')}</span>
+                                ${lkExampleHtml(f.exampleEn, f.exampleVi)}
+                            </div>
+                            ${lkAddBtnHtml(id, f.word)}
+                        </div>`);
+                }).join("");
+                return lkBox(g.label, meaningCells + formCells, g.key);
+            }).join("");
+
+            const idiomHtml = idioms.length ? lkBox("thành ngữ", idioms.map((i, n) => {
+                const id = lkRegister({ word: i.idiom, pos: "idiom", meaningVi: i.meaningVi, exampleEn: i.exampleEn, exampleVi: i.exampleVi });
+                return lkCell(`
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0 flex-1">
+                            <span class="text-slate-500 text-xs">${n + 1}.</span>
+                            <span class="font-semibold text-amber-300">${escapeHtml(i.idiom)}</span>
+                            <div class="text-slate-200 text-[13px] mt-0.5">${i.note ? `<span class="text-slate-400">(${escapeHtml(i.note)})</span> ` : ''}${escapeHtml(i.meaningVi || '')}</div>
+                            ${lkExampleHtml(i.exampleEn, i.exampleVi)}
+                        </div>
+                        ${lkAddBtnHtml(id, i.idiom)}
+                    </div>`);
+            }).join(""), "_def") : '';
+
+            const patHtml = patterns.length ? lkBox("cấu trúc & giới từ đi kèm", patterns.map((p, n) => {
+                const id = lkRegister({ word: p.pattern, pos: "phrase", meaningVi: p.meaningVi, exampleEn: p.exampleEn, exampleVi: p.exampleVi });
+                return lkCell(`
+                    <div class="flex items-start justify-between gap-2">
+                        <div class="min-w-0 flex-1">
+                            <span class="text-slate-500 text-xs">${n + 1}.</span>
+                            <span class="font-semibold text-sky-300">${escapeHtml(p.pattern)}</span>
+                            <div class="text-slate-200 text-[13px] mt-0.5">${escapeHtml(p.meaningVi || '')}</div>
+                            ${lkExampleHtml(p.exampleEn, p.exampleVi)}
+                        </div>
+                        ${lkAddBtnHtml(id, p.pattern)}
+                    </div>`);
+            }).join(""), "_def") : '';
+
+            if (!groupHtml && !idiomHtml && !patHtml) {
+                return lkPanelShell(`<div class="text-xs text-slate-400 py-6 text-center">Chưa có thêm thông tin cho từ này.</div>`);
+            }
+            return lkPanelShell(groupHtml + idiomHtml + patHtml);
+        }
+
+        function lkPlaceholdersFor(grid) {
+            // Mỗi thẻ từ ở cột trái -> 1 panel ở cột phải (ngay sau thẻ)
+            const cardEls = Array.from(grid.children).filter(el => !el.classList.contains('lk-extra'));
+            return cardEls.map(cardEl => {
+                const holder = document.createElement("div");
+                holder.className = "lk-extra-holder contents";
+                holder.innerHTML = lkLoadingHtml();
+                const panel = holder.firstElementChild;
+                holder.remove();
+                cardEl.after(panel);
+                return panel;
+            });
+        }
+
+        async function enrichLookupCards(cards, grid) {
+            if (!Array.isArray(cards) || cards.length === 0 || !grid) return;
+            lkExtra.cards = cards;
+            lkExtra.grid = grid;
+            const myToken = ++lkExtra.token;
+
+            grid.querySelectorAll('.lk-extra').forEach(el => el.remove());
+            const panels = lkPlaceholdersFor(grid);
+
+            const strProps = (...names) => Object.fromEntries(names.map(n => [n, { type: "STRING" }]));
+            const schema = {
+                type: "OBJECT",
+                properties: {
+                    entries: {
+                        type: "ARRAY",
+                        items: {
+                            type: "OBJECT",
+                            properties: {
+                                headword: { type: "STRING" },
+                                senses: {
+                                    type: "ARRAY",
+                                    items: {
+                                        type: "OBJECT",
+                                        properties: {
+                                            pos: { type: "STRING" },
+                                            meanings: {
+                                                type: "ARRAY",
+                                                items: {
+                                                    type: "OBJECT",
+                                                    properties: strProps("meaningVi", "exampleEn", "exampleVi"),
+                                                    propertyOrdering: ["meaningVi", "exampleEn", "exampleVi"]
+                                                }
+                                            }
+                                        },
+                                        propertyOrdering: ["pos", "meanings"]
+                                    }
+                                },
+                                idioms: {
+                                    type: "ARRAY",
+                                    items: {
+                                        type: "OBJECT",
+                                        properties: strProps("idiom", "note", "meaningVi", "exampleEn", "exampleVi"),
+                                        propertyOrdering: ["idiom", "note", "meaningVi", "exampleEn", "exampleVi"]
+                                    }
+                                },
+                                patterns: {
+                                    type: "ARRAY",
+                                    items: {
+                                        type: "OBJECT",
+                                        properties: strProps("pattern", "meaningVi", "exampleEn", "exampleVi"),
+                                        propertyOrdering: ["pattern", "meaningVi", "exampleEn", "exampleVi"]
+                                    }
+                                },
+                                forms: {
+                                    type: "ARRAY",
+                                    items: {
+                                        type: "OBJECT",
+                                        properties: strProps("word", "pos", "ipa", "meaningVi", "exampleEn", "exampleVi"),
+                                        propertyOrdering: ["word", "pos", "ipa", "meaningVi", "exampleEn", "exampleVi"]
+                                    }
+                                }
+                            },
+                            propertyOrdering: ["headword", "senses", "idioms", "patterns", "forms"]
+                        }
+                    }
+                },
+                propertyOrdering: ["entries"]
+            };
+
+            const systemPrompt = `Bạn là từ điển Anh-Việt đầy đủ, trình bày như từ điển giấy.
+Với MỖI từ người dùng đưa, trả về đúng 1 phần tử trong 'entries', giữ nguyên thứ tự đầu vào.
+- 'headword': đúng từ đầu vào.
+- 'senses': liệt kê TẤT CẢ các loại từ mà chính từ đầu vào có (noun, verb, adj, adv, prep...). Mỗi loại từ là 1 phần tử:
+  + 'pos': noun / verb / adj / adv / prep ...
+  + 'meanings': 1-4 nghĩa tiếng Việt phổ biến, mỗi nghĩa 1 phần tử gồm 'meaningVi' (có thể kèm ngữ cảnh trong ngoặc, ví dụ "(hàng không) độ cao tối đa của một máy bay"), 'exampleEn' (1 câu ví dụ tiếng Anh ngắn, tự nhiên) và 'exampleVi' (bản dịch).
+  Nếu từ chỉ có 1 loại từ thì chỉ trả 1 phần tử.
+- 'idioms': tối đa 4 thành ngữ / cụm cố định phổ biến chứa từ đầu vào (ví dụ "to hit the ceiling"). 'idiom' là thành ngữ tiếng Anh, 'note' là ghi chú ngắn nếu có (ví dụ "từ Mỹ, nghĩa Mỹ", "thân mật"; để chuỗi rỗng nếu không có), 'meaningVi' là nghĩa tiếng Việt, cùng 'exampleEn' và 'exampleVi'. Không có thì trả mảng rỗng.
+- 'patterns': tối đa 4 cấu trúc ngữ pháp / từ đi với giới từ phổ biến của từ đầu vào (ví dụ "interested in doing sth", "hang on to sth"). Dùng sth/sb/doing/to V cho phần thay đổi. Gồm 'pattern', 'meaningVi', 'exampleEn', 'exampleVi'. Không có thì trả mảng rỗng.
+- 'forms': tối đa 4 từ cùng họ thuộc loại từ KHÁC (ví dụ từ "hang": hanger – noun; hanging – adj). KHÔNG lặp lại chính từ đầu vào. Gồm 'word', 'pos', 'ipa', 'meaningVi', 'exampleEn', 'exampleVi'. Không có thì trả mảng rỗng.
+Chỉ đưa những mục thật sự tồn tại và hay dùng, tuyệt đối không bịa.`;
+
+            const words = cards.map(c => c.word);
+            const userPrompt = `Các từ cần phân tích họ từ & cấu trúc: ${words.join(", ")}`;
+
+            try {
+                const data = await callGeminiWithRetry(systemPrompt, userPrompt, schema);
+                if (myToken !== lkExtra.token) return; // đã có lần tra mới hơn
+                const entries = Array.isArray(data.entries) ? data.entries : [];
+                panels.forEach((panel, i) => {
+                    if (!panel || !panel.isConnected) return;
+                    const w = String(words[i] || "").toLowerCase();
+                    const entry = entries.find(e => e && String(e.headword || "").toLowerCase() === w) || entries[i];
+                    const tmp = document.createElement("div");
+                    tmp.innerHTML = lkExtraHtml(entry, words[i]);
+                    panel.replaceWith(tmp.firstElementChild);
+                });
+            } catch (err) {
+                console.error("Lỗi tải họ từ & cấu trúc:", err);
+                if (myToken !== lkExtra.token) return;
+                panels.forEach(panel => {
+                    if (!panel || !panel.isConnected) return;
+                    const tmp = document.createElement("div");
+                    tmp.innerHTML = lkPanelShell(`
+                        <div class="text-xs text-slate-400 py-6 text-center">
+                            Không tải được phần mở rộng.
+                            <button type="button" onclick="retryLookupExtra()" class="ml-1 text-sky-300 underline hover:text-sky-200">Thử lại</button>
+                        </div>`);
+                    panel.replaceWith(tmp.firstElementChild);
+                });
+            }
+        }
+
+        function retryLookupExtra() {
+            if (lkExtra.cards && lkExtra.grid) enrichLookupCards(lkExtra.cards, lkExtra.grid);
         }
 
         // ==========================================
