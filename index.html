@@ -96,7 +96,7 @@
                         <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-300 border border-indigo-500/30">
                             Dark Mode
                         </span>
-                        <button type="button" onclick="askApiKey()" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25">🔑 API Key</button>
+                        <button type="button" onclick="askApiKey()" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25">🔑 API Key (Groq)</button>
                         <button type="button" onclick="openExportModal()" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25">📤 Xuất Google Sheets</button>
                         <button type="button" onclick="openAnkiModal()" class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 hover:bg-sky-500/25">🗂️ Xuất Anki</button>
                     </div>
@@ -705,16 +705,35 @@
         // 1. CẤU HÌNH GEMINI API & TRẠNG THÁI ỨNG DỤNG
         // ==========================================
         const KEY_STORAGE = "vocabflow_gemini_key";
+        const GROQ_KEY_STORAGE = "vocabflow_groq_key";
+        // Tự nhận diện loại key theo tiền tố: key Groq luôn bắt đầu bằng "gsk_"
+        function readKey(name) { try { return (localStorage.getItem(name) || "").trim(); } catch (e) { return ""; } }
+        function getGroqKey() {
+            const g = readKey(GROQ_KEY_STORAGE);
+            if (g) return g;
+            const mis = readKey(KEY_STORAGE); // lỡ dán key Groq vào ô Gemini
+            return mis.startsWith("gsk_") ? mis : "";
+        }
         function getApiKey() {
-            try { return localStorage.getItem(KEY_STORAGE) || ""; } catch (e) { return ""; }
+            const k = readKey(KEY_STORAGE);
+            return k.startsWith("gsk_") ? "" : k;
+        }
+        function saveAnyKey(v) {
+            v = (v || "").trim();
+            if (!v) return;
+            try {
+                if (v.startsWith("gsk_")) localStorage.setItem(GROQ_KEY_STORAGE, v);
+                else localStorage.setItem(KEY_STORAGE, v);
+            } catch (e) {}
         }
         function askApiKey() {
-            const k = prompt("Dán Gemini API key của bạn (lấy miễn phí tại aistudio.google.com/apikey).\nKey chỉ lưu trong trình duyệt này.", getApiKey());
-            if (k && k.trim()) {
-                try { localStorage.setItem(KEY_STORAGE, k.trim()); } catch (e) {}
-                return k.trim();
-            }
-            return "";
+            // 1) Groq (chính)
+            const g = prompt("Dán GROQ API key (bắt đầu bằng gsk_, lấy miễn phí tại console.groq.com/keys).\nĐây là AI chính của app. Key chỉ lưu trong trình duyệt này.\nBấm Hủy để giữ nguyên.", getGroqKey());
+            saveAnyKey(g);
+            // 2) Gemini (dự phòng, không bắt buộc)
+            const k = prompt("(Không bắt buộc) Dán Gemini API key làm dự phòng khi Groq lỗi (aistudio.google.com/apikey).\nBấm Hủy để bỏ qua.", getApiKey());
+            saveAnyKey(k);
+            return getGroqKey() || getApiKey();
         }
         const GEMINI_MODEL = "gemini-3-flash-preview";
 
@@ -902,47 +921,147 @@
         // ==========================================
         // 4. GỌI GEMINI API (CÓ EXPONENTIAL BACKOFF)
         // ==========================================
-        async function callGeminiWithRetry(systemInstruction, userPrompt, responseSchema) {
-            let apiKey = getApiKey();
-            if (!apiKey) apiKey = askApiKey();
-            if (!apiKey) throw new Error("NO_KEY");
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+        const GROQ_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b"];
+
+        // Đổi schema kiểu Gemini (type: "STRING"...) sang JSON schema chuẩn để mô tả cho Groq
+        function toPlainSchema(node) {
+            if (Array.isArray(node)) return node.map(toPlainSchema);
+            if (node && typeof node === "object") {
+                const out = {};
+                for (const [k, v] of Object.entries(node)) {
+                    if (k === "propertyOrdering") continue;
+                    out[k] = (k === "type" && typeof v === "string") ? v.toLowerCase() : toPlainSchema(v);
+                }
+                return out;
+            }
+            return node;
+        }
+
+        const sleepMs = (ms) => new Promise(r => setTimeout(r, ms));
+
+        function httpError(response) {
+            const e = new Error(`HTTP status ${response.status}`);
+            e.status = response.status;
+            const ra = parseFloat(response.headers.get("retry-after"));
+            if (ra) e.retryAfterMs = Math.min(ra * 1000, 10000);
+            return e;
+        }
+
+        async function callGroq(systemInstruction, userPrompt, responseSchema, apiKey) {
+            const sys = systemInstruction +
+                "\n\nQUAN TRỌNG: Chỉ trả về DUY NHẤT một đối tượng JSON hợp lệ (không markdown, không giải thích) " +
+                "đúng theo JSON schema sau:\n" + JSON.stringify(toPlainSchema(responseSchema));
+            let lastErr = null;
+            for (const model of GROQ_MODELS) {
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    try {
+                        const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json", "Authorization": "Bearer " + apiKey },
+                            body: JSON.stringify({
+                                model,
+                                messages: [
+                                    { role: "system", content: sys },
+                                    { role: "user", content: userPrompt }
+                                ],
+                                response_format: { type: "json_object" },
+                                reasoning_effort: "low",
+                                temperature: 0.6,
+                                max_completion_tokens: 8192
+                            })
+                        });
+                        if (!response.ok) {
+                            const e = httpError(response);
+                            if (response.status === 401 || response.status === 403) { e.fatal = true; }
+                            // 400 từ Groq thường là model trả JSON hỏng -> không phải lỗi key
+                            else if (response.status === 400) { e.status = 0; }
+                            else if (response.status === 404) { e.skipModel = true; }
+                            throw e;
+                        }
+                        const result = await response.json();
+                        const text = result?.choices?.[0]?.message?.content;
+                        if (!text) throw new Error("Empty response from Groq");
+                        return JSON.parse(text);
+                    } catch (err) {
+                        lastErr = err;
+                        console.warn(`[Groq] ${model} lần ${attempt + 1} lỗi:`, err.message);
+                        if (err.fatal) throw err;
+                        if (err.skipModel) break;
+                        // 429 hết lượt: đổi model khác (hạn mức riêng) thay vì chờ lâu
+                        if (err.status === 429 && !err.retryAfterMs) break;
+                        if (attempt < 1) await sleepMs(err.retryAfterMs || 800 + Math.random() * 500);
+                    }
+                }
+            }
+            throw lastErr || new Error("Groq failed");
+        }
+
+        async function callGeminiOnly(systemInstruction, userPrompt, responseSchema, apiKey) {
+            const models = ["gemini-2.5-flash", "gemini-2.5-flash-lite", GEMINI_MODEL];
             const payload = {
                 contents: [{ role: "user", parts: [{ text: userPrompt }] }],
                 systemInstruction: { parts: [{ text: systemInstruction }] },
                 generationConfig: {
                     responseMimeType: "application/json",
-                    responseSchema: responseSchema
+                    responseSchema: responseSchema,
+                    maxOutputTokens: 8192
                 }
             };
-
-            const delays = [1000, 2000, 4000, 8000];
-            for (let attempt = 0; attempt <= delays.length; attempt++) {
-                try {
-                    const response = await fetch(apiUrl, {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(payload)
-                    });
-
-                    if (!response.ok) {
-                        const e = new Error(`HTTP status ${response.status}`);
-                        e.status = response.status;
-                        if (response.status >= 400 && response.status < 500 && response.status !== 429) e.fatal = true;
-                        throw e;
+            let lastErr = null;
+            for (const model of models) {
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+                for (let attempt = 0; attempt < 2; attempt++) {
+                    try {
+                        const response = await fetch(apiUrl, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+                            body: JSON.stringify(payload)
+                        });
+                        if (!response.ok) {
+                            const e = httpError(response);
+                            if (response.status === 400 || response.status === 401 || response.status === 403) e.fatal = true;
+                            if (response.status === 404) e.skipModel = true;
+                            throw e;
+                        }
+                        const result = await response.json();
+                        const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (!text) throw new Error("Empty response from Gemini");
+                        return JSON.parse(text);
+                    } catch (err) {
+                        lastErr = err;
+                        console.warn(`[Gemini] ${model} lần ${attempt + 1} lỗi:`, err.message);
+                        if (err.fatal) throw err;
+                        if (err.skipModel) break;
+                        if (attempt < 1) await sleepMs(err.retryAfterMs || 1000 + Math.random() * 500);
                     }
-
-                    const result = await response.json();
-                    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
-                    if (!text) throw new Error("Empty response from Gemini");
-                    return JSON.parse(text);
-                } catch (err) {
-                    if (err.fatal || attempt === delays.length) {
-                        throw err;
-                    }
-                    await new Promise(r => setTimeout(r, delays[attempt]));
                 }
             }
+            throw lastErr || new Error("Gemini failed");
+        }
+
+        // Giữ nguyên tên hàm cũ để các chỗ gọi khác không phải sửa.
+        // Thứ tự: Groq (chính) -> Gemini (dự phòng, nếu có key)
+        async function callGeminiWithRetry(systemInstruction, userPrompt, responseSchema) {
+            let groqKey = getGroqKey();
+            let gemKey = getApiKey();
+            if (!groqKey && !gemKey) {
+                askApiKey();
+                groqKey = getGroqKey();
+                gemKey = getApiKey();
+            }
+            if (!groqKey && !gemKey) throw new Error("NO_KEY");
+
+            let keyErr = null, lastErr = null;
+            if (groqKey) {
+                try { return await callGroq(systemInstruction, userPrompt, responseSchema, groqKey); }
+                catch (e) { lastErr = e; if (e.status === 401 || e.status === 403) keyErr = e; }
+            }
+            if (gemKey) {
+                try { return await callGeminiOnly(systemInstruction, userPrompt, responseSchema, gemKey); }
+                catch (e) { lastErr = e; if (e.status === 400 || e.status === 401 || e.status === 403) keyErr = keyErr || e; }
+            }
+            // Nếu key sai và không còn đường nào khác -> báo lỗi key để người dùng nhập lại
+            throw keyErr || lastErr || new Error("AI failed");
         }
 
         // ==========================================
@@ -1880,11 +1999,14 @@ Với MỖI từ/cụm từ người dùng nhập, trả về đúng 1 thẻ t�
             _def: { border: "border-slate-600/70", bg: "bg-slate-800/40", text: "text-slate-200" }
         };
 
-        function lkBox(title, inner, styleKey, extraTitleClass) {
+        function lkBox(title, inner, styleKey, extraTitleClass, wordLabel) {
             const st = LK_POS_STYLE[styleKey] || LK_POS_STYLE._def;
             return `
                 <div class="rounded-xl border ${st.border} ${st.bg} p-2.5">
-                    <div class="text-[11px] font-extrabold uppercase tracking-wide ${st.text} mb-2 ${extraTitleClass || ''}">${escapeHtml(title)}</div>
+                    <div class="flex flex-wrap items-baseline gap-x-2 mb-2 ${extraTitleClass || ''}">
+                        <span class="text-[11px] font-extrabold uppercase tracking-wide ${st.text}">${escapeHtml(title)}</span>
+                        ${wordLabel ? `<span class="text-sm font-bold text-white normal-case">${escapeHtml(wordLabel)}</span>` : ''}
+                    </div>
                     <div class="space-y-1.5">${inner}</div>
                 </div>`;
         }
@@ -1939,7 +2061,8 @@ Với MỖI từ/cụm từ người dùng nhập, trả về đúng 1 thẻ t�
                             ${lkAddBtnHtml(id, f.word)}
                         </div>`);
                 }).join("");
-                return lkBox(g.label, meaningCells + formCells, g.key);
+                const wordLabel = g.meanings.length ? headword : g.forms.map(f => f.word).join(", ");
+                return lkBox(g.label, meaningCells + formCells, g.key, "", wordLabel);
             }).join("");
 
             const idiomHtml = idioms.length ? lkBox("thành ngữ", idioms.map((i, n) => {
