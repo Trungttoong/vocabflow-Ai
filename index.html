@@ -637,7 +637,11 @@
 
             <div class="rounded-xl p-3.5 bg-[#1e293b] border border-slate-700 space-y-2.5">
                 <label class="block text-xs font-bold uppercase tracking-wider text-sky-400">Tên bộ thẻ (Deck)</label>
-                <input type="text" id="ankiDeckInput" placeholder="VocabFlow" class="w-full bg-[#0b0f19] border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500">
+                <div class="flex gap-2">
+                    <input type="text" id="ankiDeckInput" placeholder="vd: 11-11-2026" class="flex-1 min-w-0 bg-[#0b0f19] border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-sky-500">
+                    <button type="button" onclick="setAnkiDeckToday()" class="shrink-0 px-3 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition">📅 Hôm nay</button>
+                </div>
+                <p class="text-[11px] text-slate-500">Tên này dùng làm tên deck trong Anki và tên file tải về. Để trống sẽ tự lấy ngày hôm nay (dd-mm-yyyy).</p>
                 <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
                     <input type="checkbox" id="ankiFirstCheck" checked onchange="updateAnkiInfo()" class="accent-sky-500">
                     <span>Đáp án Anh → Việt chỉ lấy <strong>nghĩa đầu tiên</strong> (dễ gõ đúng hơn)</span>
@@ -2603,6 +2607,22 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
             const pad = n => String(n).padStart(2, "0");
             return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
         }
+        function todayDMY() {
+            const d = new Date();
+            const pad = n => String(n).padStart(2, "0");
+            return pad(d.getDate()) + "-" + pad(d.getMonth() + 1) + "-" + d.getFullYear();
+        }
+        function ankiDeckLabel() {
+            const el = document.getElementById("ankiDeckInput");
+            return (el && el.value.trim()) || todayDMY();
+        }
+        function ankiSafeFile(name) {
+            return String(name).replace(/[\\/:*?"<>|]+/g, "-").trim() || todayDMY();
+        }
+        function setAnkiDeckToday() {
+            document.getElementById("ankiDeckInput").value = todayDMY();
+            updateAnkiInfo();
+        }
         function isoToVi(iso) {
             const p = String(iso).split("-");
             return p.length === 3 ? p[2] + "/" + p[1] + "/" + p[0] : iso;
@@ -2811,7 +2831,7 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
             return String(v ?? "").replace(/[\t\r\n]+/g, " ");
         }
         function buildAnkiText(items, mode) {
-            const deck = document.getElementById("ankiDeckInput").value.trim();
+            const deck = ankiDeckLabel();
             const withTags = document.getElementById("ankiTagCheck").checked;
             const today = todayISO();
             const head = ["#separator:tab", "#html:true", "#guid column:1", "#notetype:" + ANKI_NOTETYPE];
@@ -2857,7 +2877,7 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
             }
         }
         function openAnkiModal() {
-            document.getElementById("ankiDeckInput").value = localStorage.getItem(ANKI_DECK_KEY) || "VocabFlow";
+            document.getElementById("ankiDeckInput").value = (() => { const v = localStorage.getItem(ANKI_DECK_KEY); return (v && v !== "VocabFlow") ? v : todayDMY(); })();
             document.getElementById("ankiModal").classList.remove("hidden");
             document.querySelector('input[name="ankiScope"][value="today"]').checked = true;
             updateAnkiInfo();
@@ -2879,7 +2899,7 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
             const blob = new Blob([buildAnkiText(items, mode)], { type: "text/plain;charset=utf-8" });
             const a = document.createElement("a");
             a.href = URL.createObjectURL(blob);
-            a.download = "vocabflow-anki_" + ANKI_MODES[mode].file + "_" + todayISO() + ".txt";
+            a.download = ankiSafeFile(ankiDeckLabel()) + "_" + ANKI_MODES[mode].file + ".txt";
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -3252,7 +3272,7 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
 
                 // 2) Dựng collection.anki2
                 say("Đang đóng gói...");
-                const deckName = document.getElementById("ankiDeckInput").value.trim() || "VocabFlow";
+                const deckName = ankiDeckLabel();
                 const withTags = document.getElementById("ankiTagCheck").checked;
                 const nowMs = Date.now();
                 const nowSec = Math.floor(nowMs / 1000);
@@ -3340,7 +3360,7 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
                 const out = await zip.generateAsync({ type: "blob", compression: "DEFLATE" });
                 const a = document.createElement("a");
                 a.href = URL.createObjectURL(out);
-                a.download = "vocabflow-anki_" + ANKI_MODES[mode].file + "_co-anh_" + todayISO() + ".apkg";
+                a.download = ankiSafeFile(ankiDeckLabel()) + "_" + ANKI_MODES[mode].file + ".apkg";
                 document.body.appendChild(a);
                 a.click();
                 document.body.removeChild(a);
