@@ -628,6 +628,11 @@
                     <input type="radio" name="ankiScope" value="all" onchange="updateAnkiInfo()" class="accent-sky-500">
                     <span><strong>Toàn bộ</strong> kho từ (<span id="ankiCountAll">0</span>)</span>
                 </label>
+                <label class="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="ankiScope" value="selected" onchange="updateAnkiInfo()" class="accent-sky-500">
+                    <span>Chỉ các từ <strong>đang chọn</strong> trong kho (<span id="ankiCountSelected">0</span>)</span>
+                </label>
+                <p class="text-[11px] text-slate-500 pl-6">Mở tab Kho từ đã lưu, nhấn vào thẻ từ để chọn/bỏ chọn rồi quay lại đây.</p>
             </div>
 
             <div class="rounded-xl p-3.5 bg-[#1e293b] border border-slate-700 space-y-2.5">
@@ -673,10 +678,7 @@
             <div class="rounded-xl p-3.5 bg-[#1e293b] border border-sky-500/30 space-y-2.5">
                 <div class="text-xs font-bold uppercase tracking-wider text-sky-400">📦 Gói kèm ảnh minh họa (.apkg)</div>
                 <p class="text-[11px] text-slate-400 leading-relaxed">Ảnh được gắn thẳng vào ô <strong>Front</strong> của thẻ (nằm dưới từ và câu ví dụ), nên hiện ngay khi bạn gõ đáp án. Cần có mạng lúc tạo gói để tải ảnh. Nhập bằng File → Import như file .txt.</p>
-                <label class="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
-                    <input type="checkbox" id="apkgAudioCheck" checked class="accent-sky-500">
-                    <span>🔊 Kèm <strong>âm thanh đọc từ</strong> tiếng Anh</span>
-                </label>
+                <div class="text-xs text-slate-300">🔊 Mọi thẻ đều có <strong>tiếng đọc</strong> tiếng Anh: ưu tiên file âm thanh nhúng sẵn; từ nào không tải được thì Anki tự đọc bằng giọng máy (TTS) nên <strong>không thẻ nào bị câm</strong>.</div>
                 <div class="grid grid-cols-2 gap-2">
                     <button type="button" id="btnApkgEnVi" onclick="downloadApkg('en-vi')" class="py-2.5 rounded-lg bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white text-xs font-bold transition leading-snug disabled:opacity-50">📦 Anh → Việt<br>(có ảnh)</button>
                     <button type="button" id="btnApkgViEn" onclick="downloadApkg('vi-en')" class="py-2.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold transition leading-snug disabled:opacity-50">📦 Việt → Anh<br>(có ảnh)</button>
@@ -2766,9 +2768,12 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
         }
         function getAnkiItems() {
             const today = todayISO();
-            const list = getAnkiScope() === "all"
+            const scope = getAnkiScope();
+            const list = scope === "all"
                 ? appState.vocabBank.slice()
-                : appState.vocabBank.filter(i => i.lastDate === today);
+                : scope === "selected"
+                    ? appState.vocabBank.filter(i => appState.selectedWords.some(w => String(w).toLowerCase() === String(i.word || "").toLowerCase()))
+                    : appState.vocabBank.filter(i => i.lastDate === today);
             return list.reverse();
         }
         function ankiHighlight(sentence, word) {
@@ -2826,6 +2831,7 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
             const today = todayISO();
             document.getElementById("ankiCountToday").textContent = appState.vocabBank.filter(i => i.lastDate === today).length;
             document.getElementById("ankiCountAll").textContent = appState.vocabBank.length;
+            document.getElementById("ankiCountSelected").textContent = appState.vocabBank.filter(i => appState.selectedWords.some(w => String(w).toLowerCase() === String(i.word || "").toLowerCase())).length;
 
             const items = getAnkiItems();
             const missing = items.filter(i => !i.exampleEn).length;
@@ -3143,19 +3149,41 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
                     speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } }
                 }
             };
-            for (let attempt = 0; attempt < 3; attempt++) {
+            for (let attempt = 0; attempt < 5; attempt++) {
                 try {
                     const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-                    if (r.status === 429) { await new Promise(res => setTimeout(res, 4000 * (attempt + 1))); continue; }
+                    if (r.status === 429 || r.status >= 500) { await new Promise(res => setTimeout(res, 3000 * (attempt + 1))); continue; }
                     if (!r.ok) return null;
                     const j = await r.json();
                     const parts = (j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts) || [];
                     const part = parts.find(x => x.inlineData && x.inlineData.data);
-                    if (!part) return null;
+                    if (!part) { await new Promise(res => setTimeout(res, 1500)); continue; }
                     const m = /rate=(\d+)/.exec(part.inlineData.mimeType || "");
                     return { blob: pcmToWavBlob(part.inlineData.data, m ? parseInt(m[1], 10) : 24000), ext: "wav" };
-                } catch (e) { return null; }
+                } catch (e) { await new Promise(res => setTimeout(res, 2000)); }
             }
+            return null;
+        }
+        // Nguồn dự phòng: file phát âm trên Wikimedia Commons (chỉ từ đơn)
+        async function fetchCommonsAudio(word) {
+            if (/\s/.test(word)) return null;
+            const w = word.toLowerCase().replace(/[^a-z'-]/g, "");
+            if (!w) return null;
+            try {
+                const titles = ["En-us-", "En-uk-", "En-au-"].map(p => "File:" + p + w + ".ogg").join("|");
+                const data = await fetchJsonTimeout("https://commons.wikimedia.org/w/api.php?action=query&format=json&origin=*&prop=imageinfo&iiprop=url&titles=" + encodeURIComponent(titles), 8000);
+                const urls = Object.values((data.query && data.query.pages) || {})
+                    .map(pg => pg.imageinfo && pg.imageinfo[0] && pg.imageinfo[0].url).filter(Boolean)
+                    .sort((a, b) => (/En-us-/.test(b) ? 1 : 0) - (/En-us-/.test(a) ? 1 : 0));
+                for (const u of urls) {
+                    try {
+                        const r = await fetch(u);
+                        if (!r.ok) continue;
+                        const blob = await r.blob();
+                        if (blob.size > 500) return { blob, ext: "ogg" };
+                    } catch (e) { /* thử file kế tiếp */ }
+                }
+            } catch (e) { /* không có trên Commons */ }
             return null;
         }
         async function getWordAudio(item) {
@@ -3164,6 +3192,7 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
             const k = w.toLowerCase();
             if (audioCache[k]) return audioCache[k];
             let a = await fetchDictAudio(w);
+            if (!a) a = await fetchCommonsAudio(w);
             if (!a) a = await fetchGeminiTtsAudio(w);
             if (a) audioCache[k] = a;
             return a;
@@ -3195,21 +3224,31 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
                 };
                 await Promise.all([worker(), worker(), worker(), worker()]);
 
-                // 1b) Âm thanh đọc từ
-                const wantAudio = document.getElementById("apkgAudioCheck").checked;
+                // 1b) Âm thanh đọc từ (bắt buộc cho mọi thẻ)
+                const wantAudio = true;
                 const audios = new Array(items.length).fill(null);
-                if (wantAudio) {
-                    let nextA = 0, doneA = 0;
-                    const workerA = async () => {
-                        while (nextA < items.length) {
-                            const idx = nextA++;
-                            audios[idx] = await getWordAudio(items[idx]);
-                            doneA++;
-                            say("Đang tạo âm thanh đọc từ... " + doneA + "/" + items.length);
-                        }
-                    };
-                    await Promise.all([workerA(), workerA(), workerA()]);
+                let nextA = 0, doneA = 0;
+                const workerA = async () => {
+                    while (nextA < items.length) {
+                        const idx = nextA++;
+                        audios[idx] = await getWordAudio(items[idx]);
+                        doneA++;
+                        say("Đang tạo âm thanh đọc từ... " + doneA + "/" + items.length);
+                    }
+                };
+                await Promise.all([workerA(), workerA(), workerA()]);
+
+                // 1c) Thử lại lần lượt (từng từ một) cho những từ còn thiếu tiếng đọc
+                for (let round = 0; round < 2; round++) {
+                    const miss = audios.map((a, k) => a ? -1 : k).filter(k => k >= 0);
+                    if (!miss.length) break;
+                    for (let m = 0; m < miss.length; m++) {
+                        say("Thử lại âm thanh cho từ còn thiếu (lần " + (round + 1) + "): " + (m + 1) + "/" + miss.length);
+                        audios[miss[m]] = await getWordAudio(items[miss[m]]);
+                    }
                 }
+                const missingWords = items.filter((it, k) => !audios[k]).map(it => it.word);
+                // Từ nào chưa tải được file âm thanh sẽ do Anki tự đọc bằng TTS (xem template thẻ bên dưới)
 
                 // 2) Dựng collection.anki2
                 say("Đang đóng gói...");
@@ -3218,7 +3257,7 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
                 const nowMs = Date.now();
                 const nowSec = Math.floor(nowMs / 1000);
                 const deckId = 1600000000000 + (parseInt(hashStr(deckName), 36) % 1000000000);
-                const mid = APKG_MODEL_ID + 20 + (mode === "vi-en" ? 1 : 0);
+                const mid = APKG_MODEL_ID + 30 + (mode === "vi-en" ? 1 : 0);
                 const css = ".card{font-family:arial;font-size:20px;text-align:center;color:black;background-color:white}.nightMode .card{color:#e5e7eb;background-color:#1f2937}img{max-width:320px;max-height:240px;border-radius:8px;margin-top:10px}";
                 const fld = (name, ord) => ({ name, ord, sticky: false, rtl: false, font: "Arial", size: 20, media: [] });
                 const models = {};
@@ -3226,11 +3265,11 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
                     id: mid, name: mode === "vi-en" ? "VocabFlow (gõ đáp án, ảnh + âm thanh) Việt→Anh" : "VocabFlow (gõ đáp án, ảnh + âm thanh) Anh→Việt", type: 0, mod: nowSec, usn: -1, sortf: 0, did: deckId,
                     tmpls: [{
                         name: "Card 1", ord: 0,
-                        qfmt: mode === "vi-en" ? "{{Front}}<br>{{type:Back}}" : "{{Front}}<br>{{Audio}}<br>{{type:Back}}",
-                        afmt: mode === "vi-en" ? "{{Front}}<hr id=answer>{{type:Back}}<br>{{Audio}}" : "{{Front}}<hr id=answer>{{type:Back}}",
+                        qfmt: mode === "vi-en" ? "{{Front}}<br>{{type:Back}}" : "{{Front}}<br>{{Audio}}{{^Audio}}{{tts en_US:Word}}{{/Audio}}<br>{{type:Back}}",
+                        afmt: mode === "vi-en" ? "{{Front}}<hr id=answer>{{type:Back}}<br>{{Audio}}{{^Audio}}{{tts en_US:Word}}{{/Audio}}" : "{{Front}}<hr id=answer>{{type:Back}}<br>{{Audio}}{{^Audio}}{{tts en_US:Word}}{{/Audio}}",
                         bqfmt: "", bafmt: "", did: null, bfont: "", bsize: 0
                     }],
-                    flds: [fld("Front", 0), fld("Back", 1), fld("Audio", 2)],
+                    flds: [fld("Front", 0), fld("Back", 1), fld("Audio", 2), fld("Word", 3)],
                     css, latexPre: "\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n",
                     latexPost: "\\end{document}", latexsvg: false, req: [[0, "all", [0]]], tags: [], vers: []
                 };
@@ -3241,7 +3280,7 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
                 const decks = { "1": deckBase(1, "Default") };
                 decks[deckId] = deckBase(deckId, deckName);
                 const dconf = { "1": {
-                    id: 1, name: "Default", replayq: true, timer: 0, maxTaken: 60, usn: 0, mod: 0, autoplay: true,
+                    id: 1, name: "Default", replayq: true, timer: 0, maxTaken: 60, usn: 0, mod: 0, autoplay: false,
                     lapse: { leechFails: 8, minInt: 1, delays: [10], leechAction: 0, mult: 0 },
                     rev: { perDay: 200, ease4: 1.3, fuzz: 0.05, minSpace: 1, ivlFct: 1, maxIvl: 36500, bury: true },
                     new: { perDay: 20, delays: [1, 10], separate: true, ints: [1, 4, 7], initialFactor: 2500, bury: true, order: 1 }
@@ -3290,7 +3329,7 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
                     const tags = withTags ? " vocabflow vocabflow::" + (it.lastDate || today) + " " : "";
                     const csum = await ankiChecksum(stripHtmlText(front));
                     db.run("INSERT INTO notes VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                        [noteId, guid, mid, nowSec, -1, tags, [front, c.back, ipaTag + audioTag].join("\x1f"), stripHtmlText(front), csum, 0, ""]);
+                        [noteId, guid, mid, nowSec, -1, tags, [front, c.back, ipaTag + audioTag, escapeHtml(String(it.word || "").trim())].join("\x1f"), stripHtmlText(front), csum, 0, ""]);
                     db.run("INSERT INTO cards VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         [cardId, noteId, deckId, 0, nowSec, -1, 0, 0, k + 1, 0, 0, 0, 0, 0, 0, 0, 0, ""]);
                 }
@@ -3306,7 +3345,7 @@ Nhiệm vụ: dịch TOÀN BỘ văn bản người dùng nhập, tự nhiên, �
                 a.click();
                 document.body.removeChild(a);
                 setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-                say("Xong: " + items.length + " thẻ, " + withImg + " thẻ có ảnh" + (wantAudio ? ", " + nAudio + " thẻ có âm thanh" : "") + (withImg < items.length ? " (" + (items.length - withImg) + " thẻ không tìm được ảnh)." : "."));
+                say("Xong: " + items.length + " thẻ, " + withImg + " thẻ có ảnh" + ", " + nAudio + " thẻ có file âm thanh" + (missingWords.length ? ", " + missingWords.length + " thẻ dùng giọng đọc TTS của Anki" : "") + (withImg < items.length ? " (" + (items.length - withImg) + " thẻ không tìm được ảnh)." : "."));
                 showToast("Đã tải gói .apkg (" + withImg + "/" + items.length + " thẻ có ảnh). Mở Anki → File → Import!");
             } catch (err) {
                 console.error("Lỗi tạo .apkg:", err);
