@@ -519,14 +519,26 @@
                             placeholder="🔍 Tìm từ hoặc nghĩa tiếng Việt..." 
                             class="flex-1 inner-surface rounded-xl px-3 py-2 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                         >
-                        <button 
-                            type="button" 
-                            onclick="pickRandomSavedWords()" 
-                            class="px-3 py-2 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold shrink-0 transition"
-                            title="Chọn ngẫu nhiên tối đa 3 từ trong kho để ôn tập"
-                        >
-                            🎲 Ôn ngẫu nhiên
-                        </button>
+                        <div class="flex shrink-0 rounded-xl overflow-hidden border border-indigo-500/30">
+                            <button 
+                                type="button" 
+                                onclick="pickRandomSavedWords()" 
+                                class="px-3 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-xs font-semibold transition"
+                                title="Chọn ngẫu nhiên tối đa 3 từ trong kho để ôn tập"
+                            >
+                                🎲 Ngẫu nhiên
+                            </button>
+                            <button 
+                                type="button" 
+                                id="btnImportWord"
+                                onclick="document.getElementById('wordFileInput').click()" 
+                                class="px-3 py-2 bg-sky-600/20 hover:bg-sky-600/30 text-sky-300 border-l border-indigo-500/30 text-xs font-semibold transition disabled:opacity-50"
+                                title="Nhập từ vựng từ file Word (.docx) rồi tự tra từ điển và lưu vào kho"
+                            >
+                                📄 Nhập Word
+                            </button>
+                        </div>
+                        <input type="file" id="wordFileInput" accept=".docx" class="hidden" onchange="handleWordFile(this)">
                     </div>
 
                     <div class="flex items-start justify-between gap-2">
@@ -1794,6 +1806,142 @@ Bản dịch của học viên: "${userTranslation}"`;
         // ==========================================
         // 7c. TRA TỪ NHANH (KÍNH LÚP) - KHÔNG TẠO CÂU
         // ==========================================
+
+        // ==========================================
+        // NHẬP TỪ VỰNG TỪ FILE WORD (.docx) -> TỰ TRA TỪ ĐIỂN -> LƯU VÀO KHO
+        // ==========================================
+        async function extractDocxWords(file) {
+            await loadScriptOnce(JSZIP_URL);
+            const zip = await JSZip.loadAsync(await file.arrayBuffer());
+            const f = zip.file("word/document.xml");
+            if (!f) throw new Error("NOT_DOCX");
+            let xml = await f.async("string");
+            xml = xml.replace(/<w:tab\/>/g, "\t").replace(/<\/w:p>/g, "\n").replace(/<w:br[^>]*\/>/g, "\n").replace(/<\/w:tc>/g, "\n");
+            const div = document.createElement("div");
+            div.innerHTML = xml.replace(/<[^>]+>/g, "");
+            const text = div.textContent || "";
+            const seen = new Set(), words = [];
+            text.split(/[\n\t,;]+/).forEach(raw => {
+                let w = raw.replace(/^[\s\-–•*·●▪■\d.)\]]+/, "").replace(/\s+/g, " ").trim();
+                if (!w || w.length > 60) return;
+                if (!/[A-Za-z]/.test(w)) return;
+                const k = w.toLowerCase();
+                if (seen.has(k)) return;
+                seen.add(k);
+                words.push(w);
+            });
+            return words;
+        }
+
+        async function handleWordFile(input) {
+            const file = input.files && input.files[0];
+            input.value = "";
+            if (!file) return;
+            if (!/\.docx$/i.test(file.name)) { showToast("Chỉ hỗ trợ file Word .docx (nếu là .doc hãy lưu lại thành .docx)."); return; }
+            if (appState.isLookingUp) { showToast("Đang tra từ, vui lòng chờ xong rồi nhập tiếp."); return; }
+
+            const section = document.getElementById("lookupSection");
+            const loading = document.getElementById("lookupLoading");
+            const grid = document.getElementById("lookupCardsGrid");
+            const savedNote = document.getElementById("lookupSavedNote");
+            const btn = document.getElementById("btnImportWord");
+            let words;
+            try {
+                words = await extractDocxWords(file);
+            } catch (e) {
+                console.error(e);
+                showToast("Không đọc được file Word này. Hãy kiểm tra lại file .docx.");
+                return;
+            }
+            if (!words.length) { showToast("Không tìm thấy từ vựng nào trong file."); return; }
+            if (words.length > 200) {
+                if (!confirm("File có " + words.length + " từ, chỉ tra 200 từ đầu tiên. Tiếp tục?")) return;
+                words = words.slice(0, 200);
+            }
+
+            appState.isLookingUp = true;
+            btn.disabled = true;
+            document.getElementById("lookupTitle").textContent = "Kết quả tra từ (file Word)";
+            document.getElementById("lookupIcon").textContent = "📄";
+            grid.className = "grid grid-cols-1 sm:grid-cols-2 gap-3.5";
+            section.classList.remove("hidden");
+            loading.classList.remove("hidden");
+            grid.innerHTML = "";
+            savedNote.classList.add("hidden");
+            section.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+            const schema = {
+                type: "OBJECT",
+                properties: { wordCards: { type: "ARRAY", items: { type: "OBJECT",
+                    properties: { word: { type: "STRING" }, pos: { type: "STRING" }, ipa: { type: "STRING" }, meaningVi: { type: "STRING" }, collocation: { type: "STRING" }, exampleEn: { type: "STRING" }, exampleVi: { type: "STRING" }, imageQuery: { type: "STRING" } },
+                    propertyOrdering: ["word", "pos", "ipa", "meaningVi", "collocation", "exampleEn", "exampleVi", "imageQuery"] } } },
+                propertyOrdering: ["wordCards"]
+            };
+            const systemPrompt = `Bạn là từ điển Anh-Việt chính xác.
+Với MỖI từ/cụm từ người dùng nhập, trả về đúng 1 thẻ từ vựng trong 'wordCards', giữ nguyên thứ tự đầu vào.
+- 'word': từ/cụm từ tiếng Anh (nếu người dùng nhập tiếng Việt thì chuyển sang từ tiếng Anh phù hợp nhất; nếu sai chính tả thì sửa lại cho đúng).
+- 'pos': từ loại (noun, verb, adj, adv, phrase...).
+- 'ipa': phiên âm quốc tế chuẩn (ví dụ: /əbˈzɔːrb/).
+- 'meaningVi': nghĩa tiếng Việt ngắn gọn, phổ biến nhất (tối đa 2-3 nghĩa chính, cách nhau dấu chấm phẩy).
+- 'collocation': 1 cụm từ đi kèm phổ biến chứa từ đó kèm nghĩa ngắn gọn (ví dụ: "absorb information (tiếp thu thông tin)").
+- 'exampleEn': 1 câu ví dụ tiếng Anh ngắn gọn, tự nhiên, có chứa từ đó.
+- 'exampleVi': bản dịch tiếng Việt của 'exampleEn'.
+- 'imageQuery': 1-3 từ khóa tiếng Anh CỤ THỂ, hình dung được bằng mắt, để tìm ảnh minh họa cho từ; với từ trừu tượng hãy chọn 1 cảnh đời thường tiêu biểu.`;
+
+            const BATCH = 8;
+            const allCards = [];
+            let failed = 0, keyProblem = false;
+            try {
+                for (let i = 0; i < words.length; i += BATCH) {
+                    const chunk = words.slice(i, i + BATCH);
+                    document.getElementById("lookupLoadingText").textContent = "Đang tra từ từ file Word... " + Math.min(i + BATCH, words.length) + "/" + words.length;
+                    try {
+                        const data = await callGeminiWithRetry(systemPrompt, "Tra các từ sau: " + chunk.join(", "), schema);
+                        const cards = (Array.isArray(data.wordCards) ? data.wordCards : []).filter(c => c && c.word);
+                        cards.forEach(card => {
+                            const existing = appState.vocabBank.find(item => item.word.toLowerCase() === card.word.toLowerCase());
+                            if (existing) {
+                                existing.meaningVi = card.meaningVi || existing.meaningVi;
+                                existing.pos = card.pos || existing.pos;
+                                existing.ipa = card.ipa || existing.ipa;
+                                existing.collocation = card.collocation || existing.collocation;
+                                existing.exampleEn = card.exampleEn || existing.exampleEn;
+                                existing.exampleVi = card.exampleVi || existing.exampleVi;
+                                existing.imageQuery = card.imageQuery || existing.imageQuery;
+                            } else {
+                                appState.vocabBank.unshift({
+                                    word: card.word, pos: card.pos, ipa: card.ipa, meaningVi: card.meaningVi,
+                                    collocation: card.collocation, exampleEn: card.exampleEn || "", exampleVi: card.exampleVi || "",
+                                    imageQuery: card.imageQuery || "", count: 1, addedDate: todayISO(), lastDate: todayISO()
+                                });
+                            }
+                            allCards.push(card);
+                        });
+                        saveStorage();
+                        renderVocabBank();
+                    } catch (e) {
+                        console.error("Lỗi tra lô từ:", e);
+                        failed += chunk.length;
+                        if (err_isKeyProblem(e)) { keyProblem = true; break; }
+                    }
+                }
+                if (!allCards.length) throw new Error(keyProblem ? "KEY" : "EMPTY_LOOKUP");
+                grid.innerHTML = allCards.map(buildWordCardHtml).join("");
+                hydrateIllustrations(grid);
+                savedNote.classList.remove("hidden");
+                try { enrichLookupCards(allCards, grid); } catch (e) { console.error(e); }
+                showToast("Đã tra " + allCards.length + " từ từ file Word và lưu vào Kho từ." + (failed ? " (" + failed + " từ lỗi, thử lại sau)" : ""));
+            } catch (error) {
+                if (keyProblem) showToast("API key thiếu hoặc không hợp lệ. Bấm nút 🔑 API Key ở trên để nhập lại.");
+                else showToast("Không tra được từ lúc này, vui lòng thử lại!");
+                section.classList.add("hidden");
+            } finally {
+                loading.classList.add("hidden");
+                appState.isLookingUp = false;
+                btn.disabled = false;
+            }
+        }
+
         function closeLookup() {
             document.getElementById("lookupSection").classList.add("hidden");
         }
